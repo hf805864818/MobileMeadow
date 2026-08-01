@@ -1,0 +1,110 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install dependencies
+        run: |
+          brew install ldid fakeroot dpkg make 2>/dev/null || true
+          # 确保 dpkg-deb 可用（rootless 打包需要）
+          which dpkg-deb || brew install dpkg 2>/dev/null || true
+
+      - name: Setup Theos
+        run: |
+          git clone --recursive https://github.com/theos/theos.git "$HOME/theos"
+          echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
+          # 将 Theos 加入 PATH
+          echo "$HOME/theos/bin" >> "$GITHUB_PATH"
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version || true
+
+      - name: Auto-increment version
+        id: version
+        run: |
+          chmod +x scripts/auto_version.sh
+          # 运行版本更新脚本，捕获输出
+          bash scripts/auto_version.sh > /tmp/version_output.txt 2>&1
+          cat /tmp/version_output.txt
+
+          # 从 control 文件读取更新后的版本号
+          NEW_VERSION=$(grep "^Version:" control | awk '{print $2}')
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Build version: $NEW_VERSION"
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add control \
+            Sources/MobileMeadowReborn/Helpers/TweakVersion.swift \
+            Preferences/Sources/MobileMeadowRebornPrefs/Helpers/TweakVersion.swift \
+            Preferences/Resources/Root.plist
+          git diff --staged --quiet || git commit -m "chore: bump version to ${{ steps.version.outputs.new_version }} [skip ci]"
+          git push || echo "Nothing to push"
+
+      - name: Generate SPM config
+        run: |
+          export THEOS="$HOME/theos"
+          make spm
+
+      - name: Build package
+        run: |
+          export THEOS="$HOME/theos"
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless 2>&1 || {
+            echo "=== Build failed, retrying with verbose output ==="
+            export THEOS="$HOME/theos"
+            make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless VERBOSE=1
+          }
+
+      - name: List build artifacts
+        run: |
+          echo "=== Build artifacts ==="
+          find packages -type f -name "*.deb" 2>/dev/null || echo "No .deb found in packages/"
+          ls -la packages/ 2>/dev/null || true
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: MobileMeadowReborn-${{ steps.version.outputs.new_version }}
+          path: packages/*.deb
+          if-no-files-found: warn
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.new_version }}
+          name: MobileMeadow Reborn v${{ steps.version.outputs.new_version }}
+          body: |
+            ## MobileMeadow Reborn v${{ steps.version.outputs.new_version }}
+
+            ### 自动构建
+            - 由 GitHub Actions 自动编译
+            - iOS 17 兼容性修复版本
+            - Rootless jailbreak 支持
+
+            ### 安装方法
+            1. 下载 .deb 文件
+            2. 通过 Sileo 或 Filza 安装
+            3. Respring 后生效
+          files: packages/*.deb
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

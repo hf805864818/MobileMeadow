@@ -1,0 +1,23 @@
+### THEOS-Tweak ###
+.DS_Store
+/.build
+/Packages
+/*.xcodeproj
+xcuserdata/
+
+.theos
+/packages
+/obj
+
+### Swift Package Manager ###
+.swiftpm
+/Xcode
+/package
+.xcworkspace
+
+### CI / Build Artifacts ###
+*.deb
+*.dylib
+*.so
+*.o
+*.ipa
