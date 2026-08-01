@@ -10,7 +10,7 @@ class MMAirLayerViewController: UIViewController {
     ///MMAirLayerViewController
     private let frame: CGRect
     private let birdsManager: SBBirdsManager = SBBirdsManager.shared
-    private weak var timer?
+    private weak var timer: Timer?
 
     // MARK: - Initializers
     private init(withFrame frame: CGRect) {
