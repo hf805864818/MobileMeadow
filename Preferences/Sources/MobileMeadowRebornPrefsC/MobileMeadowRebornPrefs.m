@@ -8,7 +8,7 @@ void respring(void) {
 
     NSFileManager *fileManager = [NSFileManager defaultManager];
 
-    if ([fileManager fileExistsWithPath:@"/var/Liy/.procursus_strapped"] || [fileManager fileExistsWithPath:@"/var/jb/.procursus_strapped"]) {
+    if ([fileManager fileExistsAtPath:@"/var/Liy/.procursus_strapped"] || [fileManager fileExistsAtPath:@"/var/jb/.procursus_strapped"]) {
         posix_spawn(&pid, "/var/jb/usr/bin/killall", NULL, NULL, (char *const *)args, environ);
         return;
     }
