@@ -20,7 +20,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew install ldid fakeroot dpkg make 2>/dev/null || true
+          brew install ldid dpkg make 2>/dev/null || true
           # 确保 dpkg-deb 可用（rootless 打包需要）
           which dpkg-deb || brew install dpkg 2>/dev/null || true
 
@@ -102,9 +102,11 @@ jobs:
       - name: Build package
         run: |
           export THEOS="$HOME/theos"
+          export THEOS_FAKEROOT=""
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless 2>&1 || {
             echo "=== Build failed, retrying with verbose output ==="
             export THEOS="$HOME/theos"
+            export THEOS_FAKEROOT=""
             make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless VERBOSE=1
           }
 
