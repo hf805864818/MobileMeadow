@@ -45,11 +45,11 @@ class MobileMeadowMainVC: PSListController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        // 在 viewDidLoad 中设置 tableHeaderView（而非每次 cellForRowAt 都设置）
-        // 使用 DispatchQueue.main.async 确保 tableView 已完成布局
+        // iOS 17 兼容：使用安全方法设置 tableHeaderView
+        // PSListController.tableView 在 iOS 17 中可能不可直接访问
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            self.tableView.tableHeaderView = self.headerView
+            self.setTableHeaderView(self.headerView)
         }
     }
 

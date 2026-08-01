@@ -21,6 +21,15 @@ class MobileMeadowMiscellanousVC: PSListController {
         ])
     }
     
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        // iOS 17 兼容：在 viewDidLoad 中安全设置 tableHeaderView
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.setTableHeaderView(self.headerView)
+        }
+    }
+    
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         
@@ -31,12 +40,6 @@ class MobileMeadowMiscellanousVC: PSListController {
         super.viewWillDisappear(animated)
         
         NavigationBarManager.setNavBarThemed(enabled: false, vc: self)
-    }
-    
-    //MARK: - TableView
-    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        tableView.tableHeaderView = headerView
-        return super.tableView(tableView, cellForRowAt: indexPath)
     }
     
     //MARK: - Required
