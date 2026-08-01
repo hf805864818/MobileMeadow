@@ -7,8 +7,8 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = MobileMeadowReborn
 
 MobileMeadowReborn_FILES = $(shell find Sources/MobileMeadowReborn -name '*.swift') $(shell find Sources/MobileMeadowRebornC -name '*.m' -o -name '*.c' -o -name '*.mm' -o -name '*.cpp')
-MobileMeadowReborn_SWIFTFLAGS = -ISources/MobileMeadowRebornC/include
-MobileMeadowReborn_CFLAGS = -fobjc-arc -ISources/MobileMeadowRebornC/include
+MobileMeadowReborn_SWIFTFLAGS = -ISources/MobileMeadowRebornC/include -I$(THEOS)/vendor/include -I$(THEOS)/include
+MobileMeadowReborn_CFLAGS = -fobjc-arc -ISources/MobileMeadowRebornC/include -I$(THEOS)/vendor/include -I$(THEOS)/include
 MobileMeadowReborn_EXTRA_FRAMEWORKS = SpringBoard BulletinBoard
 
 include $(THEOS_MAKE_PATH)/tweak.mk
