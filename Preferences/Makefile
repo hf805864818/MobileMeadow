@@ -8,5 +8,6 @@ MobileMeadowRebornPrefs_FILES = $(shell find Sources/MobileMeadowRebornPrefs -na
 MobileMeadowRebornPrefs_SWIFTFLAGS = -ISources/MobileMeadowRebornPrefsC/include -I$(THEOS)/vendor/include -I$(THEOS)/include
 MobileMeadowRebornPrefs_INSTALL_PATH = /Library/PreferenceBundles
 MobileMeadowRebornPrefs_CFLAGS = -fobjc-arc -ISources/MobileMeadowRebornPrefsC/include -I$(THEOS)/vendor/include -I$(THEOS)/include
+MobileMeadowRebornPrefs_LDFLAGS = -undefined dynamic_lookup
 
 include $(THEOS_MAKE_PATH)/bundle.mk

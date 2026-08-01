@@ -31,6 +31,40 @@ jobs:
           # 将 Theos 加入 PATH
           echo "$HOME/theos/bin" >> "$GITHUB_PATH"
 
+      - name: Create private framework stubs
+        run: |
+          THEOS="$HOME/theos"
+          VENDOR_LIB="$THEOS/vendor/lib"
+          mkdir -p "$VENDOR_LIB"
+          
+          # 为私有框架创建 tbd 存根文件（CI 环境没有 iOS 私有框架二进制）
+          create_tbd() {
+            local framework_name="$1"
+            local install_name="/System/Library/PrivateFrameworks/${framework_name}.framework/${framework_name}"
+            local framework_dir="$VENDOR_LIB/${framework_name}.framework"
+            mkdir -p "$framework_dir"
+            cat > "$framework_dir/${framework_name}.tbd" << EOF
+          --- !tapi-tbd
+          tbd-version:     4
+          targets:         [ arm64-ios, arm64e-ios ]
+          platform:        ios
+          install-name:    ${install_name}
+          current-version: 0
+          objc-constraint: retain_release
+          ...
+          EOF
+            echo "Created stub: $framework_dir/${framework_name}.tbd"
+          }
+          
+          create_tbd "SpringBoard"
+          create_tbd "BulletinBoard"
+          create_tbd "Preferences"
+          create_tbd "FrontBoard"
+          create_tbd "BackBoardServices"
+          create_tbd "AppSupport"
+          
+          echo "=== Private framework stubs created ==="
+
       - name: Select Xcode
         run: |
           sudo xcode-select -s /Applications/Xcode.app
