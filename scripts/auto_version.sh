@@ -82,9 +82,9 @@ fi
 # ---- 更新 Root.plist 中的页脚版本号 ----
 if [ -f "$ROOT_PLIST" ]; then
     if [[ "$(uname)" == "Darwin" ]]; then
-        sed -i '' "s/© 2024, ★ Install Package Files · v.*/© 2024, ★ Install Package Files · v${NEW_VERSION}/" "$ROOT_PLIST"
+        sed -i '' "s/© 2024, ★ Install Package Files · v[0-9.]*/© 2024, ★ Install Package Files · v${NEW_VERSION}/" "$ROOT_PLIST"
     else
-        sed -i "s/© 2024, ★ Install Package Files · v.*/© 2024, ★ Install Package Files · v${NEW_VERSION}/" "$ROOT_PLIST"
+        sed -i "s/© 2024, ★ Install Package Files · v[0-9.]*/© 2024, ★ Install Package Files · v${NEW_VERSION}/" "$ROOT_PLIST"
     fi
     echo "✓ Updated $ROOT_PLIST footer text"
 fi
