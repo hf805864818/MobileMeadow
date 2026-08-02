@@ -38,14 +38,17 @@ extension PSListController {
     /// 注意：方法名不能使用 setTableHeaderView，因为它会与 UITableView 的
     /// setTableHeaderView: 选择器冲突，导致 ObjC 消息转发到 UIView 时崩溃
     /// 改用 mm_applyHeaderToTable 名称，并通过 ObjC 异常安全包装器设置
-    func mm_applyHeaderToTable(_ headerView: UIView) {
+    func mm_applyHeaderToTable(_ headerView: UIView, retryCount: Int = 0) {
+        let maxRetries = 3
         guard let tableView = safeTableView() else {
-            // tableView 尚未加载，延迟重试
+            // tableView 尚未加载，延迟重试（最多 3 次）
+            guard retryCount < maxRetries else {
+                NSLog("[MobileMeadow] mm_applyHeaderToTable: max retries (\(maxRetries)) reached, giving up")
+                return
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 guard let self = self else { return }
-                if let tv = self.safeTableView() {
-                    _ = MMSafeSetTableHeader(tv, headerView)
-                }
+                self.mm_applyHeaderToTable(headerView, retryCount: retryCount + 1)
             }
             return
         }

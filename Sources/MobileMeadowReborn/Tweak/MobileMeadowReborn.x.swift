@@ -92,7 +92,9 @@ class SBDockHook: ClassHook<SBDockIconListView> {
         if (self.dockGround == nil) {
             self.dockGround = MMGroundContainerView.shared
             remLog("MeadowGroundDock created...")
-            superview.addSubview(self.dockGround!)
+            if let ground = self.dockGround {
+                superview.addSubview(ground)
+            }
         }
     }
 }

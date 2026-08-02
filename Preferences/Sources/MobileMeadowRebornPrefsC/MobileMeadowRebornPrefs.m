@@ -1,20 +1,32 @@
 #import "MobileMeadowRebornPrefs.h"
 #import <objc/message.h>
+#import <spawn.h>
+#import <sys/wait.h>
 
 // Thanks to @Nightwind for his respring method (changed from "sbreload" to "killall SpringBoard")
 void respring(void) {
     extern char **environ;
     const char *args[] = {"killall", "SpringBoard", NULL};
-    pid_t pid;
+    pid_t pid = -1;
 
     NSFileManager *fileManager = [NSFileManager defaultManager];
 
     if ([fileManager fileExistsAtPath:@"/var/Liy/.procursus_strapped"] || [fileManager fileExistsAtPath:@"/var/jb/.procursus_strapped"]) {
-        posix_spawn(&pid, "/var/jb/usr/bin/killall", NULL, NULL, (char *const *)args, environ);
+        int status = posix_spawn(&pid, "/var/jb/usr/bin/killall", NULL, NULL, (char *const *)args, environ);
+        if (status != 0) {
+            NSLog(@"[MobileMeadow] respring: posix_spawn failed for /var/jb/usr/bin/killall (errno=%d)", status);
+        } else if (pid > 0) {
+            waitpid(pid, NULL, 0);
+        }
         return;
     }
 
-    posix_spawn(&pid, "/usr/bin/killall", NULL, NULL, (char *const *)args, environ);
+    int status = posix_spawn(&pid, "/usr/bin/killall", NULL, NULL, (char *const *)args, environ);
+    if (status != 0) {
+        NSLog(@"[MobileMeadow] respring: posix_spawn failed for /usr/bin/killall (errno=%d)", status);
+    } else if (pid > 0) {
+        waitpid(pid, NULL, 0);
+    }
 }
 
 /// iOS 17 兼容：ObjC 异常安全的 KVC 读取

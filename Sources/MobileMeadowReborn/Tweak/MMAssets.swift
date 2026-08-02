@@ -38,6 +38,8 @@ class MMAssets: NSObject {
         return path
     }
 
+    /// 串行队列用于保护 cachedImages 和 imageCountsForPrefixes 的线程安全访问
+    private static let syncQueue = DispatchQueue(label: "com.pkgfiles.mobilemeadow.assets.sync")
     private static var cachedImages: [String: UIImage] = [:]
     private static var imageCountsForPrefixes: [String: NSNumber] = [:]
     
@@ -47,23 +49,38 @@ class MMAssets: NSObject {
     }
     
     static func imageNamed(_ name: String) -> UIImage? {
-        if let cachedImage = cachedImages[name] {
+        // 线程安全：在串行队列中读取缓存
+        var cachedImage: UIImage?
+        syncQueue.sync {
+            cachedImage = cachedImages[name]
+        }
+        if let cachedImage = cachedImage {
             return cachedImage
         }
+
         let imagePath = "\(assetsPath)/\(name).png"
         if let image = UIImage(contentsOfFile: imagePath) {
-            cachedImages[name] = image
+            syncQueue.sync {
+                cachedImages[name] = image
+            }
             return image
         }
         return nil
     }
     
     static func randomImage(withPrefix prefix: String) -> UIImage? {
-        if let imageCount = imageCountsForPrefixes[prefix] {
+        var imageCount: NSNumber?
+        syncQueue.sync {
+            imageCount = imageCountsForPrefixes[prefix]
+        }
+
+        if let imageCount = imageCount {
             return getRandomImage(for: prefix, count: imageCount.uintValue)
         } else {
             let imageCountRaw = findImageCount(for: prefix)
-            imageCountsForPrefixes[prefix] = NSNumber(value: imageCountRaw)
+            syncQueue.sync {
+                imageCountsForPrefixes[prefix] = NSNumber(value: imageCountRaw)
+            }
             return getRandomImage(for: prefix, count: imageCountRaw)
         }
     }
@@ -81,7 +98,7 @@ class MMAssets: NSObject {
     
     private static func getRandomImage(for prefix: String, count: UInt) -> UIImage? {
         guard count > 0 else { return nil }
-        let randomIndex = arc4random_uniform(UInt32(count))
+        let randomIndex = UInt32.random(in: 0..<UInt32(count))
         return imageNamed("\(prefix)_\(randomIndex)")
     }
 }

@@ -56,7 +56,14 @@ class TweakPreferences {
         }
     }
     
-    func loadPreferences() -> SettingsModel {
+    func loadPreferences(retryCount: Int = 0) -> SettingsModel {
+        // 防止无限递归：最多重试 2 次，超过则返回默认设置
+        let maxRetries = 2
+        guard retryCount < maxRetries else {
+            remLog("loadPreferences: max retry count (\(maxRetries)) reached, returning default settings")
+            return SettingsModel()
+        }
+
         let fileManager = FileManager()
         let plistIdentifier: String = "com.pkgfiles.mobilemeadowrebornprefs.plist"
         let plistPath: String = fileManager.fileExists(atPath: "/var/jb/")
@@ -69,15 +76,15 @@ class TweakPreferences {
                 remLog(settings)
                 return settings
             } catch {
-                remLog("Preferences Updating...")
+                remLog("Preferences Updating... (retry \(retryCount + 1)/\(maxRetries))")
                 updatePreferences(atPath: plistPath)
-                return loadPreferences()
+                return loadPreferences(retryCount: retryCount + 1)
             }
         } else {
             if !fileManager.fileExists(atPath: plistPath) {
                 remLog("Preferences don't exist... Creating...")
                 createPreferences(atPath: plistPath)
-                return loadPreferences()
+                return loadPreferences(retryCount: retryCount + 1)
             }
         }
         return SettingsModel()

@@ -11,8 +11,8 @@ extension UILabel {
 
         if FileManager.default.fileExists(atPath: fontPath) {
             // 使用 CTFontManager 安全加载字体（避免 ObjC 异常）
-            if let fontURL = URL(string: fontPath),
-               let dataProvider = CGDataProvider(url: fontURL as CFURL),
+            let fontURL = URL(fileURLWithPath: fontPath)
+            if let dataProvider = CGDataProvider(url: fontURL as CFURL),
                let cgFont = CGFont(dataProvider) {
                 var error: Unmanaged<CFError>?
                 CTFontManagerRegisterGraphicsFont(cgFont, &error)

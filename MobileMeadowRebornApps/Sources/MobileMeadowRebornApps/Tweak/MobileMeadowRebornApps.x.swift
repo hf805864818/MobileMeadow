@@ -39,7 +39,9 @@ class UITabBarHook: ClassHook<_UIBarBackground> {
             } else { return }
             
             self.groundContainer = MMGroundContainerView()
-            target.addSubview(self.groundContainer!)
+            if let container = self.groundContainer {
+                target.addSubview(container)
+            }
         }
     }
 }
