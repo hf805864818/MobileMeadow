@@ -82,7 +82,8 @@ func setupBirdOverlayIfNeeded() {
         remLog("setupBirdOverlayIfNeeded: fallback — injecting view into keyWindow")
         if let keyWindow = getSpringBoardKeyWindow() {
             let birdVC = MMAirLayerViewController.shared
-            let birdView = birdVC.view
+            // 显式类型标注为 UIView，避免 view! 的 IUO 被 SwiftUI Optional<View> 扩展拦截
+            let birdView: UIView = birdVC.view
             birdView.frame = keyWindow.bounds
             birdView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             birdView.isUserInteractionEnabled = false
