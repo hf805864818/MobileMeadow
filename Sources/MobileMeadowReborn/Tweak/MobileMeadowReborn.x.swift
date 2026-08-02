@@ -26,8 +26,10 @@ struct SBMailBoxBirdNotification: HookGroup { let notificationHookEnabled: Bool 
 //MARK: - Initialize Tweak
 struct MobileMeadowReborn: Tweak {
     init() {
+        remLog("=== MobileMeadowReborn init() ===")
         remLog("Preferences Loading...")
         tweakPrefs = TweakPreferences.preferences.loadPreferences()
+        remLog("Preferences loaded: isTweakEnabled=\(tweakPrefs.isTweakEnabled), plants=\(tweakPrefs.plantsEnabled), birds=\(tweakPrefs.birdsEnabled), mailbox=\(tweakPrefs.mailBoxEnabled)")
         
         let dockHook: SBPlants = SBPlants(plantsEnabled: tweakPrefs.plantsEnabled)
         let sceneHook: SBBirds = SBBirds(birdsEnabled: tweakPrefs.birdsEnabled)
@@ -35,12 +37,17 @@ struct MobileMeadowReborn: Tweak {
         switch tweakPrefs.isTweakEnabled {
         case true:
             remLog("Tweak is Enabled! :)")
-            if dockHook.plantsEnabled { dockHook.activate() }
+            if dockHook.plantsEnabled {
+                dockHook.activate()
+                remLog("SBPlants hook group activated")
+            }
             if sceneHook.birdsEnabled {
                 sceneHook.activate()
+                remLog("SBBirds hook group activated")
                 let sceneExtraHook: SBMailBoxBird = SBMailBoxBird(mailBoxBirdEnabled: tweakPrefs.mailBoxEnabled)
                 if sceneExtraHook.mailBoxBirdEnabled {
                     sceneExtraHook.activate()
+                    remLog("SBMailBoxBird hook group activated")
                     
                     // iOS 17 兼容性检查：NCNotificationShortLookViewController 在 iOS 17 中通知系统重构后可能不存在
                     // 仅当目标类存在时才激活通知 Hook，避免 tweak 加载时因找不到类而崩溃
@@ -57,6 +64,7 @@ struct MobileMeadowReborn: Tweak {
             remLog("Tweak is Disabled! :(")
             break
         }
+        remLog("=== MobileMeadowReborn init() complete ===")
     }
 }
 
@@ -69,7 +77,9 @@ class SBInterfaceHook: ClassHook<SpringBoard> {
         orig.applicationDidFinishLaunching(application)
         
         if (self.airLayerWindow == nil) {
+            remLog("SBInterfaceHook: creating MMAirLayerWindow...")
             self.airLayerWindow = MMAirLayerWindow(frame: UIScreen.main.bounds)
+            remLog("SBInterfaceHook: MMAirLayerWindow created, isHidden=\(self.airLayerWindow?.isHidden ?? true), windowScene=\(String(describing: self.airLayerWindow?.windowScene))")
         }
     }
 }
@@ -88,12 +98,17 @@ class SBDockHook: ClassHook<SBDockIconListView> {
     
     //orion:new
     func createMeadowDockGround() {
-        guard let superview = target.superview else { return }
+        guard let superview = target.superview else {
+            remLog("SBDockHook: target.superview is nil, cannot create dock ground")
+            return
+        }
         if (self.dockGround == nil) {
+            remLog("SBDockHook: creating MMGroundContainerView...")
             self.dockGround = MMGroundContainerView.shared
             remLog("MeadowGroundDock created...")
             if let ground = self.dockGround {
                 superview.addSubview(ground)
+                remLog("SBDockHook: ground added to superview, frame=\(ground.frame)")
             }
         }
     }

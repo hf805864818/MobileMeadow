@@ -8,6 +8,18 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
+			<string> </string>
+		</dict>
+		<dict>
+			<key>cellClass</key>
+			<string>MobileMeadowRebornPrefs.MobileMeadowDuoCreditCell</string>
+			<key>height</key>
+			<real>60</real>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
 			<string>General</string>
 		</dict>
 		<dict>
@@ -25,11 +37,67 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Options</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkCell</string>
+			<key>detail</key>
+			<string>MobileMeadowRebornPrefs.MobileMeadowBirdsVC</string>
+			<key>isController</key>
+			<true/>
+			<key>label</key>
+			<string>Birds</string>
+			<key>icon</key>
+			<string>bird.png</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkCell</string>
+			<key>detail</key>
+			<string>MobileMeadowRebornPrefs.MobileMeadowPlantsVC</string>
+			<key>isController</key>
+			<true/>
+			<key>label</key>
+			<string>Plants</string>
+			<key>icon</key>
+			<string>plant.png</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkCell</string>
+			<key>detail</key>
+			<string>MobileMeadowRebornPrefs.MobileMeadowMiscellanousVC</string>
+			<key>isController</key>
+			<true/>
+			<key>label</key>
+			<string>Miscellanous</string>
+			<key>icon</key>
+			<string>miscellanous.png</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerAlignment</key>
+			<real>1</real>
 			<key>footerText</key>
-			<string>MobileMeadow Reborn</string>
+			<string>Made with 💚</string>
+			<key>isStaticText</key>
+			<true/>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerAlignment</key>
+			<real>1</real>
+			<key>footerText</key>
+			<string>© 2024, ★ Install Package Files</string>
+			<key>isStaticText</key>
+			<true/>
 		</dict>
 	</array>
 	<key>title</key>
-	<string>MobileMeadow Reborn</string>
+	<string></string>
 </dict>
 </plist>

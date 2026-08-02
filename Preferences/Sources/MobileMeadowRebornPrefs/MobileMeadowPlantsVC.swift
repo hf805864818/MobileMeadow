@@ -5,6 +5,22 @@ class MobileMeadowPlantsVC: PSListController {
     
     let headerView = UIView(frame: CGRect(x: 0, y: 0, width: 150, height: 275))
     private var headerApplied = false
+    private var specifiersLoaded = false
+    
+    override var specifiers: NSMutableArray? {
+        get {
+            if !specifiersLoaded {
+                specifiersLoaded = true
+                if let loaded = safeLoadSpecifiers(fromPlistName: "MobileMeadowPlants") {
+                    safeSetSpecifiers(loaded)
+                }
+            }
+            return safeGetSpecifiers()
+        }
+        set {
+            safeSetSpecifiers(newValue)
+        }
+    }
     
     override init(forContentSize contentSize: CGSize) {
         super.init(forContentSize: contentSize)

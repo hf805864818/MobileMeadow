@@ -25,33 +25,71 @@
 */
 
 import UIKit
+import MobileMeadowRebornC
 
 class MMAirLayerWindow: UIWindow {
+    
+    private var sceneObserver: NSObjectProtocol?
     
     //MARK: - Initializer
     override init(frame: CGRect) {
         super.init(frame: frame)
-    
-        self.windowLevel = UIWindow.Level.alert - 1
-        
-        // iOS 17 兼容：使用 connectedScenes 替代已废弃的 UIApplication.shared.windows
-        if let scene = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .first(where: { $0.activationState == .foregroundActive }) {
-            self.windowScene = scene
-        } else if let scene = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .first {
-            // 回退：使用第一个可用的 scene
-            self.windowScene = scene
-        }
-        
-        self.rootViewController = MMAirLayerViewController.shared
-        self.isHidden = false
+        commonInit()
     }
     
     required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
+        super.init(coder: coder)
+        commonInit()
+    }
+    
+    private func commonInit() {
+        self.windowLevel = UIWindow.Level.alert - 1
+        self.rootViewController = MMAirLayerViewController.shared
+        
+        // iOS 17 兼容：使用 connectedScenes
+        if let scene = findActiveScene() {
+            self.windowScene = scene
+            remLog("MMAirLayerWindow: attached to scene \(scene)")
+            self.makeKeyAndVisible()
+        } else {
+            // 场景尚未就绪，注册观察者等待场景连接
+            remLog("MMAirLayerWindow: no active scene found, waiting for scene connection...")
+            sceneObserver = NotificationCenter.default.addObserver(
+                forName: UIScene.willConnectNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                guard let self = self,
+                      self.windowScene == nil,
+                      let scene = notification.object as? UIWindowScene else { return }
+                self.windowScene = scene
+                remLog("MMAirLayerWindow: attached to scene via observer \(scene)")
+                self.makeKeyAndVisible()
+                if let observer = self.sceneObserver {
+                    NotificationCenter.default.removeObserver(observer)
+                    self.sceneObserver = nil
+                }
+            }
+        }
+    }
+    
+    private func findActiveScene() -> UIWindowScene? {
+        // 优先查找前台活跃的 scene
+        if let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }) {
+            return scene
+        }
+        // 回退：使用第一个可用的 scene
+        return UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first
+    }
+    
+    deinit {
+        if let observer = sceneObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
     
     //MARK: - Overrides

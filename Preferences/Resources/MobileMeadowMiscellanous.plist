@@ -44,14 +44,6 @@
 				<integer>1</integer>
 			</array>
 		</dict>
-		<dict>
-			<key>cellClass</key>
-			<string>MobileMeadowRebornPrefs.MobileMeadowInfoButtonCell</string>
-			<key>buttonLabelText</key>
-			<string>Dock Swipegesture</string>
-			<key>buttonInfoText</key>
-			<string>Swipe left or right on the dock to display all applications with registered notifications</string>
-		</dict>
 	</array>
 	<key>title</key>
 	<string>Miscellanous</string>

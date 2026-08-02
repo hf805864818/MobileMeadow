@@ -56,6 +56,7 @@ class MMGroundContainerView: UIView {
     //MARK: - Initializer
     private override init(frame: CGRect) {
         super.init(frame: frame)
+        remLog("MMGroundContainerView init(frame:) called")
         setupGroundContainerView()
     }
     
@@ -71,6 +72,7 @@ class MMGroundContainerView: UIView {
     
     override func didMoveToSuperview() {
         super.didMoveToSuperview()
+        remLog("MMGroundContainerView didMoveToSuperview, superview=\(String(describing: superview))")
         setupViewConstraints()
         setupMailBoxView()
         updatePlants()
