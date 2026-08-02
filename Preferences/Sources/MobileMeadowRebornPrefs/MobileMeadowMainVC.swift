@@ -6,6 +6,20 @@ class MobileMeadowMainVC: PSListController {
     let headerView = UIView(frame: CGRect(x: 0, y: 0, width: 200, height: 225))
     private var headerApplied = false
 
+    override var specifiers: NSMutableArray? {
+        get {
+            if let specifiers = safeGetSpecifiers(), specifiers.count > 0 {
+                return specifiers
+            }
+            let specifiers = safeLoadSpecifiers(fromPlistName: "Root")
+            safeSetSpecifiers(specifiers)
+            return specifiers
+        }
+        set {
+            super.specifiers = newValue
+        }
+    }
+
     override init(forContentSize contentSize: CGSize) {
         super.init(forContentSize: contentSize)
 

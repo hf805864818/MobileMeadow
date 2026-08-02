@@ -5,20 +5,18 @@ class MobileMeadowMiscellanousVC: PSListController {
     
     let headerView = UIView(frame: CGRect(x: 0, y: 0, width: 150, height: 350))
     private var headerApplied = false
-    private var specifiersLoaded = false
     
     override var specifiers: NSMutableArray? {
         get {
-            if !specifiersLoaded {
-                specifiersLoaded = true
-                if let loaded = safeLoadSpecifiers(fromPlistName: "MobileMeadowMiscellanous") {
-                    safeSetSpecifiers(loaded)
-                }
+            if let specifiers = safeGetSpecifiers(), specifiers.count > 0 {
+                return specifiers
             }
-            return safeGetSpecifiers()
+            let specifiers = safeLoadSpecifiers(fromPlistName: "MobileMeadowMiscellanous")
+            safeSetSpecifiers(specifiers)
+            return specifiers
         }
         set {
-            safeSetSpecifiers(newValue)
+            super.specifiers = newValue
         }
     }
     
