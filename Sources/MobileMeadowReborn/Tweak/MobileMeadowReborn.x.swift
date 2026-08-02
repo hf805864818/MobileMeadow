@@ -12,6 +12,23 @@ private func classExists(_ className: String) -> Bool {
     return NSClassFromString(className) != nil
 }
 
+/// 获取 SpringBoard 的活跃 UIWindowScene
+private func getActiveWindowScene() -> UIWindowScene? {
+    return UIApplication.shared.connectedScenes
+        .compactMap({ $0 as? UIWindowScene })
+        .first(where: { $0.activationState == .foregroundActive })
+        ?? UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first
+}
+
+/// 获取 SpringBoard 的 key window（iOS 17 兼容）
+private func getSpringBoardKeyWindow() -> UIWindow? {
+    guard let scene = getActiveWindowScene() else { return nil }
+    return scene.windows.first(where: { $0.isKeyWindow })
+        ?? scene.windows.first
+}
+
 //MARK: - Variables
 var tweakPrefs: SettingsModel = SettingsModel()
 
@@ -78,14 +95,66 @@ struct MobileMeadowReborn: Tweak {
 class SBInterfaceHook: ClassHook<SpringBoard> {
     typealias Group = SBBirds
     @Property var airLayerWindow: MMAirLayerWindow?
+    @Property var sceneObserver: NSObjectProtocol?
     
     func applicationDidFinishLaunching(_ application: Any) {
         orig.applicationDidFinishLaunching(application)
         
         if (self.airLayerWindow == nil) {
-            remLog("SBInterfaceHook: creating MMAirLayerWindow...")
-            self.airLayerWindow = MMAirLayerWindow(frame: UIScreen.main.bounds)
-            remLog("SBInterfaceHook: MMAirLayerWindow created, isHidden=\(self.airLayerWindow?.isHidden ?? true), windowScene=\(String(describing: self.airLayerWindow?.windowScene))")
+            setupBirdOverlay()
+        }
+    }
+    
+    //orion:new
+    func setupBirdOverlay() {
+        remLog("SBInterfaceHook: setupBirdOverlay called")
+        
+        // 方案 1（推荐）：使用 UIWindowScene 创建覆盖窗口
+        if let scene = getActiveWindowScene() {
+            remLog("SBInterfaceHook: found active scene, creating window via init(windowScene:)")
+            let window = MMAirLayerWindow(windowScene: scene)
+            window.frame = scene.coordinateSpace.bounds
+            window.makeKeyAndVisible()
+            self.airLayerWindow = window
+            remLog("SBInterfaceHook: window created and visible, isHidden=\(window.isHidden)")
+            return
+        }
+        
+        // 方案 2：场景尚未就绪，注册观察者等待
+        remLog("SBInterfaceHook: no active scene yet, registering for scene activation...")
+        sceneObserver = NotificationCenter.default.addObserver(
+            forName: UIScene.didActivateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self = self,
+                  self.airLayerWindow == nil,
+                  let scene = notification.object as? UIWindowScene else { return }
+            remLog("SBInterfaceHook: scene activated, creating window")
+            let window = MMAirLayerWindow(windowScene: scene)
+            window.frame = scene.coordinateSpace.bounds
+            window.makeKeyAndVisible()
+            self.airLayerWindow = window
+            if let obs = self.sceneObserver {
+                NotificationCenter.default.removeObserver(obs)
+                self.sceneObserver = nil
+            }
+        }
+        
+        // 方案 3（兜底）：3 秒后如果窗口仍未创建，直接注入到 SpringBoard keyWindow
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            guard let self = self, self.airLayerWindow == nil else { return }
+            remLog("SBInterfaceHook: fallback — injecting view directly into SpringBoard keyWindow")
+            if let keyWindow = getSpringBoardKeyWindow() {
+                let birdView = MMAirLayerViewController.shared.view!
+                birdView.frame = keyWindow.bounds
+                birdView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                birdView.isUserInteractionEnabled = false
+                keyWindow.addSubview(birdView)
+                remLog("SBInterfaceHook: bird view injected into keyWindow, frame=\(birdView.frame)")
+            } else {
+                remLog("SBInterfaceHook: FATAL — no keyWindow found, birds will not appear!")
+            }
         }
     }
 }

@@ -107,10 +107,12 @@ jobs:
         run: |
           export THEOS="$HOME/theos"
           export THEOS_FAKEROOT=""
+          make clean 2>/dev/null || true
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless 2>&1 || {
             echo "=== Build failed, retrying with verbose output ==="
             export THEOS="$HOME/theos"
             export THEOS_FAKEROOT=""
+            make clean 2>/dev/null || true
             make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless VERBOSE=1
           }
 

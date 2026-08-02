@@ -1,9 +1,7 @@
-TARGET := iphone:clang:latest:14.5
+TARGET = iphone:clang:latest:15.0
 INSTALL_TARGET_PROCESSES = SpringBoard
 THEOS_PACKAGE_SCHEME = rootless
 export ARCHS = arm64 arm64e
-# 确保 Swift 编译也使用多架构
-export SWIFT_ARCHS = arm64 arm64e
 
 include $(THEOS)/makefiles/common.mk
 
