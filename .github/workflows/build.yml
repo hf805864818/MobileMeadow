@@ -273,7 +273,8 @@ jobs:
             xz) tar -cJf ../data.tar.xz . ;;
             zst) tar --zstd -cf ../data.tar.zst . ;;
           esac
-          # 重新打包 deb
+          # 重新打包 deb（注意：不能用 ar rcs 的 s 标志，s 会创建 ranlib 符号表破坏 deb 格式）
+          # deb 格式要求文件顺序：debian-binary → control.tar → data.tar
           cd "$WORK_DIR"
           CONTROL_COMP=$(ls control.tar.* 2>/dev/null | head -1 | sed 's/control\.tar\.//')
           if [ -z "$CONTROL_COMP" ]; then
@@ -281,7 +282,8 @@ jobs:
             ls -la
             exit 1
           fi
-          ar rcs new.deb debian-binary control.tar.${CONTROL_COMP} data.tar.${DATA_COMP}
+          rm -f new.deb
+          ar r new.deb debian-binary control.tar.${CONTROL_COMP} data.tar.${DATA_COMP}
           echo "=== Copying fat deb back to packages ==="
           cp new.deb "$DEB_FILE"
           cd "$PROJECT_DIR"
