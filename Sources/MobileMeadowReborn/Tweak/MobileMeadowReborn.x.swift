@@ -2,17 +2,16 @@ import Orion
 import MobileMeadowRebornC
 
 // MobileMeadow Reborn - Turn your phone into a meadow. Add flowers to your apps. Let birds fly on your screen.
-// Rewrite for modern iOS 14.0 - 16.7.10
+// Rewrite for modern iOS 14.0 - 17.x
 // based on original from @pixelomer: https://github.com/pixelomer/MobileMeadow
-// iOS 17 compatibility patches applied
 
 //MARK: - iOS Compatibility Helpers
-/// 检查 ObjC 运行时中某个类是否存在（iOS 17 通知系统重构后部分类可能消失）
+/// 检查 ObjC 运行时中某个类是否存在
 private func classExists(_ className: String) -> Bool {
     return NSClassFromString(className) != nil
 }
 
-/// 获取 SpringBoard 的活跃 UIWindowScene
+/// 获取 SpringBoard 的活跃 UIWindowScene（iOS 17 兼容）
 private func getActiveWindowScene() -> UIWindowScene? {
     return UIApplication.shared.connectedScenes
         .compactMap({ $0 as? UIWindowScene })
@@ -32,12 +31,74 @@ private func getSpringBoardKeyWindow() -> UIWindow? {
 //MARK: - Variables
 var tweakPrefs: SettingsModel = SettingsModel()
 
+/// 全局飞鸟覆盖层窗口引用（与 SBInterfaceHook.airLayerWindow 同步）
+var globalAirLayerWindow: MMAirLayerWindow?
+var globalSceneObserver: NSObjectProtocol?
+
+//MARK: - 全局飞鸟覆盖层初始化
+/// 核心修复：tweak 加载时 SpringBoard 的 applicationDidFinishLaunching 早已调用完毕，
+/// 因此不能仅依赖该 hook。改为在 Tweak.init() 中直接调用此函数。
+func setupBirdOverlayIfNeeded() {
+    guard globalAirLayerWindow == nil else { return }
+    remLog("setupBirdOverlayIfNeeded: starting...")
+
+    // 方案 1（推荐）：使用 UIWindowScene 创建覆盖窗口
+    if let scene = getActiveWindowScene() {
+        remLog("setupBirdOverlayIfNeeded: found active scene, creating window via init(windowScene:)")
+        let window = MMAirLayerWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds
+        // 关键修复：只设置 isHidden = false，不调用 makeKeyAndVisible()
+        // makeKeyAndVisible() 会抢夺 SpringBoard 主窗口的 key 状态，导致桌面异常
+        window.isHidden = false
+        globalAirLayerWindow = window
+        remLog("setupBirdOverlayIfNeeded: window created, isHidden=\(window.isHidden), isKeyWindow=\(window.isKeyWindow)")
+        return
+    }
+
+    // 方案 2：场景尚未就绪，注册观察者等待
+    remLog("setupBirdOverlayIfNeeded: no active scene yet, registering observer...")
+    globalSceneObserver = NotificationCenter.default.addObserver(
+        forName: UIScene.didActivateNotification,
+        object: nil,
+        queue: .main
+    ) { notification in
+        guard globalAirLayerWindow == nil,
+              let scene = notification.object as? UIWindowScene else { return }
+        remLog("setupBirdOverlayIfNeeded: scene activated, creating window")
+        let window = MMAirLayerWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds
+        // 关键修复：只设置 isHidden = false，不调用 makeKeyAndVisible()
+        window.isHidden = false
+        globalAirLayerWindow = window
+        if let obs = globalSceneObserver {
+            NotificationCenter.default.removeObserver(obs)
+            globalSceneObserver = nil
+        }
+    }
+
+    // 方案 3（兜底）：3 秒后直接注入到 SpringBoard keyWindow
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+        guard globalAirLayerWindow == nil else { return }
+        remLog("setupBirdOverlayIfNeeded: fallback — injecting view into keyWindow")
+        if let keyWindow = getSpringBoardKeyWindow() {
+            let birdVC = MMAirLayerViewController.shared
+            let birdView = birdVC.view
+            birdView.frame = keyWindow.bounds
+            birdView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            birdView.isUserInteractionEnabled = false
+            keyWindow.addSubview(birdView)
+            remLog("setupBirdOverlayIfNeeded: bird view injected, frame=\(birdView.frame)")
+        } else {
+            remLog("setupBirdOverlayIfNeeded: FATAL — no keyWindow found")
+        }
+    }
+}
+
 //MARK: - Hook Groups
 struct SBPlants: HookGroup { let plantsEnabled: Bool }
 struct SBBirds: HookGroup { let birdsEnabled: Bool }
 struct SBMailBoxBird: HookGroup { let mailBoxBirdEnabled: Bool }
-/// 独立的邮件通知 Hook 组 —— NCNotificationShortLookViewController 在 iOS 17 中可能不存在，
-/// 需要在激活前检查类是否存在，避免 tweak 加载时崩溃
+/// 独立的通知 Hook 组 —— 仅在 NCNotificationShortLookViewController 类存在时激活
 struct SBMailBoxBirdNotification: HookGroup { let notificationHookEnabled: Bool }
 
 //MARK: - Initialize Tweak
@@ -46,46 +107,50 @@ struct MobileMeadowReborn: Tweak {
         remLog("=== MobileMeadowReborn init() ===")
         remLog("Preferences Loading...")
         tweakPrefs = TweakPreferences.preferences.loadPreferences()
-        remLog("Preferences loaded: isTweakEnabled=\(tweakPrefs.isTweakEnabled), plants=\(tweakPrefs.plantsEnabled), birds=\(tweakPrefs.birdsEnabled), mailbox=\(tweakPrefs.mailBoxEnabled)")
-        
+        remLog("Prefs: enabled=\(tweakPrefs.isTweakEnabled), plants=\(tweakPrefs.plantsEnabled), birds=\(tweakPrefs.birdsEnabled), mailbox=\(tweakPrefs.mailBoxEnabled)")
+
         let dockHook: SBPlants = SBPlants(plantsEnabled: tweakPrefs.plantsEnabled)
         let sceneHook: SBBirds = SBBirds(birdsEnabled: tweakPrefs.birdsEnabled)
-        
+
         switch tweakPrefs.isTweakEnabled {
         case true:
             remLog("Tweak is Enabled! :)")
             if dockHook.plantsEnabled {
-                // iOS 17 兼容性检查：SBDockIconListView 在 iOS 17 中可能已被移除或重命名
                 if classExists("SBDockIconListView") {
                     dockHook.activate()
-                    remLog("SBPlants hook group activated (SBDockIconListView found)")
+                    remLog("SBPlants hook group activated")
                 } else {
-                    remLog("⚠️ SBDockIconListView not found on this iOS version — plants hook skipped")
-                    remLog("   This is expected on iOS 17+ where SpringBoard dock classes have changed")
+                    remLog("⚠️ SBDockIconListView not found — plants hook skipped (iOS 17+ compatibility)")
                 }
             }
             if sceneHook.birdsEnabled {
                 sceneHook.activate()
                 remLog("SBBirds hook group activated")
+
                 let sceneExtraHook: SBMailBoxBird = SBMailBoxBird(mailBoxBirdEnabled: tweakPrefs.mailBoxEnabled)
                 if sceneExtraHook.mailBoxBirdEnabled {
-                    // iOS 17 兼容性检查：SBRootFolderController 在 iOS 17 中可能已变更
                     if classExists("SBRootFolderController") {
                         sceneExtraHook.activate()
-                        remLog("SBMailBoxBird hook group activated (SBRootFolderController found)")
+                        remLog("SBMailBoxBird hook group activated")
                     } else {
-                        remLog("⚠️ SBRootFolderController not found — mailbox hook skipped (iOS 17+ compatibility)")
+                        remLog("⚠️ SBRootFolderController not found — mailbox hook skipped")
                     }
-                    
-                    // iOS 17 兼容性检查：NCNotificationShortLookViewController 在 iOS 17 中通知系统重构后可能不存在
-                    // 仅当目标类存在时才激活通知 Hook，避免 tweak 加载时因找不到类而崩溃
+
                     if classExists("NCNotificationShortLookViewController") {
                         let notifHook = SBMailBoxBirdNotification(notificationHookEnabled: true)
                         notifHook.activate()
-                        remLog("Notification hook activated (NCNotificationShortLookViewController found)")
+                        remLog("Notification hook activated")
                     } else {
-                        remLog("⚠️ NCNotificationShortLookViewController not found — notification hook skipped (iOS 17+ compatibility)")
+                        remLog("⚠️ NCNotificationShortLookViewController not found — notification hook skipped")
                     }
+                }
+
+                // 核心修复：直接触发飞鸟覆盖层初始化
+                // applicationDidFinishLaunching 在 tweak 加载前已调用，hook 不会触发
+                // 所以必须在这里主动调用
+                DispatchQueue.main.async {
+                    setupBirdOverlayIfNeeded()
+                    remLog("setupBirdOverlayIfNeeded() called from Tweak.init()")
                 }
             }
         case false:
@@ -101,95 +166,41 @@ class SBInterfaceHook: ClassHook<SpringBoard> {
     typealias Group = SBBirds
     @Property var airLayerWindow: MMAirLayerWindow?
     @Property var sceneObserver: NSObjectProtocol?
-    
+
+    /// 作为兜底：如果 applicationDidFinishLaunching 还没被调用（少数情况），也会触发
     func applicationDidFinishLaunching(_ application: Any) {
         orig.applicationDidFinishLaunching(application)
-        
-        if (self.airLayerWindow == nil) {
-            setupBirdOverlay()
-        }
+        setupBirdOverlayIfNeeded()
     }
-    
-    //orion:new
-    func setupBirdOverlay() {
-        remLog("SBInterfaceHook: setupBirdOverlay called")
-        
-        // 方案 1（推荐）：使用 UIWindowScene 创建覆盖窗口
-        if let scene = getActiveWindowScene() {
-            remLog("SBInterfaceHook: found active scene, creating window via init(windowScene:)")
-            let window = MMAirLayerWindow(windowScene: scene)
-            window.frame = scene.coordinateSpace.bounds
-            window.makeKeyAndVisible()
-            self.airLayerWindow = window
-            remLog("SBInterfaceHook: window created and visible, isHidden=\(window.isHidden)")
-            return
-        }
-        
-        // 方案 2：场景尚未就绪，注册观察者等待
-        remLog("SBInterfaceHook: no active scene yet, registering for scene activation...")
-        sceneObserver = NotificationCenter.default.addObserver(
-            forName: UIScene.didActivateNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            guard let self = self,
-                  self.airLayerWindow == nil,
-                  let scene = notification.object as? UIWindowScene else { return }
-            remLog("SBInterfaceHook: scene activated, creating window")
-            let window = MMAirLayerWindow(windowScene: scene)
-            window.frame = scene.coordinateSpace.bounds
-            window.makeKeyAndVisible()
-            self.airLayerWindow = window
-            if let obs = self.sceneObserver {
-                NotificationCenter.default.removeObserver(obs)
-                self.sceneObserver = nil
-            }
-        }
-        
-        // 方案 3（兜底）：3 秒后如果窗口仍未创建，直接注入到 SpringBoard keyWindow
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
-            guard let self = self, self.airLayerWindow == nil else { return }
-            remLog("SBInterfaceHook: fallback — injecting view directly into SpringBoard keyWindow")
-            if let keyWindow = getSpringBoardKeyWindow() {
-                let birdView = MMAirLayerViewController.shared.view!
-                birdView.frame = keyWindow.bounds
-                birdView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-                birdView.isUserInteractionEnabled = false
-                keyWindow.addSubview(birdView)
-                remLog("SBInterfaceHook: bird view injected into keyWindow, frame=\(birdView.frame)")
-            } else {
-                remLog("SBInterfaceHook: FATAL — no keyWindow found, birds will not appear!")
-            }
-        }
+
+    /// 新增：当 SpringBoard 变为活跃时触发（设备解锁、切换回桌面等）
+    /// 这是比 applicationDidFinishLaunching 更可靠的触发点
+    func applicationDidBecomeActive(_ application: Any) {
+        orig.applicationDidBecomeActive(application)
+        setupBirdOverlayIfNeeded()
     }
 }
 
 class SBDockHook: ClassHook<SBDockIconListView> {
     typealias Group = SBPlants
     @Property var dockGround: MMGroundContainerView?
-    
+
     func didMoveToWindow() {
         orig.didMoveToWindow()
-        createDockGroundIfNeeded()
-    }
-    
-    //orion:new
-    func createDockGroundIfNeeded() {
-        // 如果已创建则跳过
-        guard self.dockGround == nil else { return }
-        
-        // 如果 superview 尚未就绪，直接返回
-        // didMoveToWindow 会在视图层级变化时被系统多次调用，无需手动重试
-        guard let superview = target.superview else {
+
+        // 如果 superview 尚未就绪，直接返回（didMoveToWindow 会被系统多次调用）
+        guard target.superview != nil else {
             remLog("SBDockHook: superview is nil, will retry on next didMoveToWindow")
             return
         }
-        
+        // 如果已创建则跳过
+        guard self.dockGround == nil else { return }
+
         remLog("SBDockHook: creating MMGroundContainerView...")
         self.dockGround = MMGroundContainerView.shared
         remLog("MeadowGroundDock created...")
         if let ground = self.dockGround {
-            superview.addSubview(ground)
+            target.superview?.addSubview(ground)
             remLog("SBDockHook: ground added to superview, frame=\(ground.frame)")
         }
     }
@@ -197,11 +208,10 @@ class SBDockHook: ClassHook<SBDockIconListView> {
 
 class SBHomescreenHook: ClassHook<SBRootFolderController> {
     typealias Group = SBMailBoxBird
-    
+
     func viewDidAppear(_ animated: Bool) {
         orig.viewDidAppear(animated)
-        
-        // iOS 17 防御性检查：确保 mailBoxView 可访问
+
         SBApplicationManager.shared.getBadgeValues { result in
             switch result {
             case .success(let value):
@@ -223,12 +233,12 @@ class SBHomescreenHook: ClassHook<SBRootFolderController> {
 }
 
 class NCNotificationHook: ClassHook<NCNotificationShortLookViewController> {
-    /// 使用独立的通知 Hook 组，仅在 NCNotificationShortLookViewController 类存在时激活
+    /// 使用独立的通知 Hook 组，仅在类存在时激活
     typealias Group = SBMailBoxBirdNotification
-    
+
     func viewDidLoad() {
         orig.viewDidLoad()
-        
+
         SBApplicationManager.shared.getBadgeValues { result in
             switch result {
             case .success(let value):
