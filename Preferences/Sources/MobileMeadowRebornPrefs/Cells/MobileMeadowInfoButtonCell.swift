@@ -3,6 +3,7 @@ import MobileMeadowRebornPrefsC
 import AudioToolbox.AudioServices
 
 @available(iOS 13.0, *)
+@objc(MobileMeadowInfoButtonCell)
 class MobileMeadowInfoButtonCell: PSTableCell {
 
     //MARK: - Propertys

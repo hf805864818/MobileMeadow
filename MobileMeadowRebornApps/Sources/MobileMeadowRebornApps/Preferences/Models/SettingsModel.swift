@@ -2,7 +2,7 @@ import UIKit
 
 struct SettingsModel: DictionaryConvertor, Codable {
     // General
-    var isTweakEnabled: Bool = false
+    var isTweakEnabled: Bool = true
     
     // Birds
     ///Not needed here, as this project is only for the plants in Applications

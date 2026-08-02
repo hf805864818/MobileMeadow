@@ -1,14 +1,18 @@
 import Preferences
+import MobileMeadowRebornPrefsC
 
+@objc(MobileMeadowDuoCreditCell)
 class MobileMeadowDuoCreditCell: PSTableCell {
     
     //MARK: - Propertys
-    private let leftCreditCell: MobileMeadowCreditView = {
+    // 使用 lazy var 延迟初始化，确保在 super.init 完成之后才创建 CreditView
+    // 避免在 cell 未完全初始化时进行复杂的 UIKit 操作导致 Swift 运行时陷阱
+    private lazy var leftCreditCell: MobileMeadowCreditView = {
         let view = MobileMeadowCreditView(username: (user: "★\u{2002}Install\u{2002}Package\u{2002}Files", shorthand: "pkgFiles"), avatarUrlString: "1651534033019437056/BlFUdlQg_200x200.jpg")
         return view
     }()
     
-    private let rightCreditCell: MobileMeadowCreditView = {
+    private lazy var rightCreditCell: MobileMeadowCreditView = {
         let view = MobileMeadowCreditView(username: (user: "Samperson", shorthand: "SamNChiet"), avatarUrlString: "1605080302723878912/KBQBJO5N_200x200.jpg")
         return view
     }()
