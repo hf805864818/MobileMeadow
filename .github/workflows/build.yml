@@ -75,27 +75,27 @@ jobs:
           echo "Build version: ${CURRENT_VERSION}"
 
       # ============================================================
-      # Helper function: build for a specific architecture and save binaries
-      # Usage: build_arch <arch> <output_dir>
-      # ============================================================
-
-      # ============================================================
       # 步骤 1：构建 arm64 并保存所有 Mach-O 二进制
+      # 关键修复：在 make spm 之前设置 THEOS_CURRENT_ARCH 环境变量
+      # 这样 Package.swift 会通过环境变量回退读取到正确的架构
       # ============================================================
       - name: Build for arm64
         run: |
           export THEOS="$HOME/theos"
           export THEOS_FAKEROOT=""
+          export THEOS_CURRENT_ARCH=arm64
           make clean 2>/dev/null || true
           rm -rf .build/ Preferences/.build/ MobileMeadowRebornApps/.build/ 2>/dev/null || true
           rm -rf .theos/ Preferences/.theos/ MobileMeadowRebornApps/.theos/ 2>/dev/null || true
+          # make spm 会调用 swift build，Package.swift 通过 THEOS_CURRENT_ARCH 环境变量回退读取架构
           make spm 2>/dev/null || make spm
+          # 确保 spm_config 中有正确的 arch（删除可能存在的旧 arch 行，避免重复键导致崩溃）
+          sed -i '' '/^arch=/d' .theos/spm_config 2>/dev/null || true
           echo "arch=arm64" >> .theos/spm_config
           echo "=== .theos/spm_config for arm64 ==="
           cat .theos/spm_config
           make all ARCHS=arm64 2>&1
           echo "=== arm64 build complete, saving binaries ==="
-          # 保存所有 Mach-O 二进制（主项目 + 子项目），保留相对路径
           SAVE_DIR="/tmp/arch_bin/arm64"
           rm -rf "$SAVE_DIR"
           mkdir -p "$SAVE_DIR"
@@ -108,24 +108,36 @@ jobs:
             fi
           done
           echo "=== arm64 binaries saved ==="
-          find "$SAVE_DIR" -type f
+          find "$SAVE_DIR" -type f -exec lipo -info {} \;
 
       # ============================================================
       # 步骤 2：构建 arm64e 并保存所有 Mach-O 二进制
+      # 关键修复：在 make spm 之前设置 THEOS_CURRENT_ARCH=arm64e
+      # 之前的 bug 是 make spm 先用默认 arm64 编译，之后才注入 arch=arm64e
+      # 但 SPM 已经编译完成，注入的 arch 不起作用
       # ============================================================
       - name: Build for arm64e
         run: |
           export THEOS="$HOME/theos"
           export THEOS_FAKEROOT=""
+          export THEOS_CURRENT_ARCH=arm64e
           make clean 2>/dev/null || true
           rm -rf .build/ Preferences/.build/ MobileMeadowRebornApps/.build/ 2>/dev/null || true
           rm -rf .theos/ Preferences/.theos/ MobileMeadowRebornApps/.theos/ 2>/dev/null || true
+          # 关键：THEOS_CURRENT_ARCH=arm64e 在 make spm 之前设置
+          # Package.swift 会通过环境变量回退读取到 arm64e
           make spm 2>/dev/null || make spm
+          # 确保 spm_config 中有正确的 arch
+          sed -i '' '/^arch=/d' .theos/spm_config 2>/dev/null || true
           echo "arch=arm64e" >> .theos/spm_config
-          # 子项目的 spm_config 也需要注入 arch
+          # 子项目也需要生成 spm_config 并注入 arch
           for proj in Preferences MobileMeadowRebornApps; do
-            if [ -f "$proj/.theos/spm_config" ]; then
-              echo "arch=arm64e" >> "$proj/.theos/spm_config"
+            if [ -d "$proj" ]; then
+              (cd "$proj" && make spm 2>/dev/null || true)
+              if [ -f "$proj/.theos/spm_config" ]; then
+                sed -i '' '/^arch=/d' "$proj/.theos/spm_config" 2>/dev/null || true
+                echo "arch=arm64e" >> "$proj/.theos/spm_config"
+              fi
             fi
           done
           echo "=== .theos/spm_config for arm64e ==="
@@ -144,7 +156,12 @@ jobs:
             fi
           done
           echo "=== arm64e binaries saved ==="
-          find "$SAVE_DIR" -type f
+          find "$SAVE_DIR" -type f -exec lipo -info {} \;
+          # 验证：如果没有 arm64e 二进制，说明编译失败
+          if [ -z "$(find "$SAVE_DIR" -type f)" ]; then
+            echo "FATAL: No arm64e binaries were built!"
+            exit 1
+          fi
 
       # ============================================================
       # 步骤 3：创建 fat binaries
@@ -157,7 +174,6 @@ jobs:
           mkdir -p "$FAT_DIR"
           ARM64_DIR="/tmp/arch_bin/arm64"
           ARM64E_DIR="/tmp/arch_bin/arm64e"
-          # 遍历所有 arm64 二进制，与 arm64e 对应文件合并
           find "$ARM64_DIR" -type f | while read arm64_file; do
             rel_path="${arm64_file#$ARM64_DIR/}"
             arm64e_file="$ARM64E_DIR/$rel_path"
@@ -180,25 +196,25 @@ jobs:
 
       # ============================================================
       # 步骤 4：构建 arm64 包，然后替换二进制为 fat binary，重新打包
-      # 采用"解包-替换-重新打包"方案，确保 fat binary 进入最终 deb
       # ============================================================
       - name: Package with fat binaries
         run: |
           export THEOS="$HOME/theos"
           export THEOS_FAKEROOT=""
-          # 保存项目根目录的绝对路径
+          export THEOS_CURRENT_ARCH=arm64
           PROJECT_DIR="$PWD"
           make clean 2>/dev/null || true
           rm -rf .build/ Preferences/.build/ MobileMeadowRebornApps/.build/ 2>/dev/null || true
           rm -rf .theos/ Preferences/.theos/ MobileMeadowRebornApps/.theos/ 2>/dev/null || true
           make spm 2>/dev/null || make spm
+          sed -i '' '/^arch=/d' .theos/spm_config 2>/dev/null || true
           echo "arch=arm64" >> .theos/spm_config
-          # 子项目也注入 arch
           for proj in Preferences MobileMeadowRebornApps; do
             if [ -d "$proj" ]; then
               (cd "$proj" && make spm 2>/dev/null || true)
               if [ -f "$proj/.theos/spm_config" ]; then
-                grep -q "^arch=" "$proj/.theos/spm_config" || echo "arch=arm64" >> "$proj/.theos/spm_config"
+                sed -i '' '/^arch=/d' "$proj/.theos/spm_config" 2>/dev/null || true
+                echo "arch=arm64" >> "$proj/.theos/spm_config"
               fi
             fi
           done
@@ -206,7 +222,6 @@ jobs:
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless ARCHS=arm64 2>&1
           echo "=== Package built, now injecting fat binaries ==="
           FAT_DIR="/tmp/arch_bin/fat"
-          # 找到生成的 deb（使用绝对路径）
           DEB_FILE=$(ls "$PROJECT_DIR/packages/"*.deb 2>/dev/null | head -1)
           if [ -z "$DEB_FILE" ]; then
             echo "ERROR: No .deb file found!"
@@ -214,17 +229,14 @@ jobs:
             exit 1
           fi
           echo "Original deb: $DEB_FILE"
-          # 使用 dpkg-deb 解包整个 deb（包括 control 文件和数据）
           WORK_DIR="/tmp/deb_work"
           rm -rf "$WORK_DIR"
           mkdir -p "$WORK_DIR/root"
-          # dpkg-deb -R 解压完整目录结构（DEBIAN/ + 数据文件）
           dpkg-deb -R "$DEB_FILE" "$WORK_DIR/root"
           echo "=== Extracted deb contents ==="
           ls -la "$WORK_DIR/root/"
           ls -la "$WORK_DIR/root/DEBIAN/" 2>/dev/null
           echo "=== Replacing binaries with fat versions ==="
-          # 在解压的数据中找到所有 Mach-O 二进制并替换
           find "$WORK_DIR/root" -type f -not -path "$WORK_DIR/root/DEBIAN/*" | while read f; do
             if file "$f" | grep -q "Mach-O"; then
               bin_name=$(basename "$f")
@@ -238,14 +250,13 @@ jobs:
               fi
             fi
           done
-          echo "=== Verifying architectures ==="
+          echo "=== Verifying architectures in deb ==="
           find "$WORK_DIR/root" -type f -not -path "$WORK_DIR/root/DEBIAN/*" | while read f; do
             if file "$f" | grep -q "Mach-O"; then
               echo "--- $f ---"
               lipo -info "$f" 2>/dev/null || file "$f"
             fi
           done
-          # 使用 dpkg-deb -b 重新打包
           echo "=== Rebuilding deb with dpkg-deb ==="
           NEW_DEB="$PROJECT_DIR/packages/$(basename "$DEB_FILE")"
           rm -f "$NEW_DEB"

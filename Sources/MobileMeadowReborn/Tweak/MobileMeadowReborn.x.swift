@@ -47,11 +47,10 @@ func setupBirdOverlayIfNeeded() {
         remLog("setupBirdOverlayIfNeeded: found active scene, creating window via init(windowScene:)")
         let window = MMAirLayerWindow(windowScene: scene)
         window.frame = scene.coordinateSpace.bounds
-        // 关键修复：只设置 isHidden = false，不调用 makeKeyAndVisible()
-        // makeKeyAndVisible() 会抢夺 SpringBoard 主窗口的 key 状态，导致桌面异常
-        window.isHidden = false
+        // 使用 makeKeyAndVisible 正确加入渲染树，窗口内部会自动 resignKey
+        window.makeKeyAndVisible()
         globalAirLayerWindow = window
-        remLog("setupBirdOverlayIfNeeded: window created, isHidden=\(window.isHidden), isKeyWindow=\(window.isKeyWindow)")
+        remLog("setupBirdOverlayIfNeeded: window created and visible, isKeyWindow=\(window.isKeyWindow)")
         return
     }
 
@@ -67,8 +66,7 @@ func setupBirdOverlayIfNeeded() {
         remLog("setupBirdOverlayIfNeeded: scene activated, creating window")
         let window = MMAirLayerWindow(windowScene: scene)
         window.frame = scene.coordinateSpace.bounds
-        // 关键修复：只设置 isHidden = false，不调用 makeKeyAndVisible()
-        window.isHidden = false
+        window.makeKeyAndVisible()
         globalAirLayerWindow = window
         if let obs = globalSceneObserver {
             NotificationCenter.default.removeObserver(obs)
@@ -204,6 +202,43 @@ class SBDockHook: ClassHook<SBDockIconListView> {
             target.superview?.addSubview(ground)
             remLog("SBDockHook: ground added to superview, frame=\(ground.frame)")
         }
+    }
+}
+
+/// 强制 Dock 背景材质视图不透明，使植物可见
+/// 原版 MobileMeadow 的关键 hook：当 MTMaterialView 的父视图是 SBDockView 时，
+/// 强制 alpha=1.0 且 hidden=NO，否则 Dock 背景半透明会遮挡植物
+class MTMaterialViewHook: ClassHook<MTMaterialView> {
+    typealias Group = SBPlants
+
+    func setAlpha(_ alpha: CGFloat) {
+        if let superview = target.superview, NSStringFromClass(type(of: superview)) == "SBDockView" {
+            orig.setAlpha(1.0)
+        } else {
+            orig.setAlpha(alpha)
+        }
+    }
+
+    func setHidden(_ hidden: Bool) {
+        if let superview = target.superview, NSStringFromClass(type(of: superview)) == "SBDockView" {
+            orig.setHidden(false)
+        } else {
+            orig.setHidden(hidden)
+        }
+    }
+}
+
+/// 隐藏主屏幕页面指示器小圆点（与原版行为一致）
+class SBIconListPageControlHook: ClassHook<SBIconListPageControl> {
+    typealias Group = SBPlants
+
+    func setHidden(_ hidden: Bool) {
+        orig.setHidden(true)
+    }
+
+    func didMoveToWindow() {
+        orig.didMoveToWindow()
+        target.isHidden = true
     }
 }
 

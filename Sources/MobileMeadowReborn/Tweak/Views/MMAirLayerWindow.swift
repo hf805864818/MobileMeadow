@@ -28,7 +28,8 @@ class MMAirLayerWindow: UIWindow {
 
     private func commonInit() {
         self.backgroundColor = .clear
-        self.windowLevel = UIWindow.Level.alert - 1
+        // 使用与原版一致的高窗口层级，确保飞鸟覆盖在所有普通窗口之上
+        self.windowLevel = UIWindow.Level(rawValue: CGFLOAT_MAX / 2.0)
         self.rootViewController = MMAirLayerViewController.shared
         remLog("MMAirLayerWindow: commonInit, windowLevel=\(self.windowLevel.rawValue), hasScene=\(self.windowScene != nil)")
     }
@@ -39,15 +40,23 @@ class MMAirLayerWindow: UIWindow {
 
     //MARK: - Overrides
 
-    /// 飞鸟窗口不应成为 key window，否则会抢夺 SpringBoard 主窗口的 key 状态
-    /// 覆盖此方法仅设置 isHidden = false，不调用 super.makeKeyAndVisible()
+    /// 飞鸟窗口需要通过 makeKeyAndVisible 正确加入渲染树
+    /// 调用后立即 resign key，将 key 状态还给 SpringBoard 主窗口
     override func makeKeyAndVisible() {
-        self.isHidden = false
-        remLog("MMAirLayerWindow: isHidden=false (NOT making key), hasScene=\(self.windowScene != nil), frame=\(self.frame)")
+        super.makeKeyAndVisible()
+        // 立即放弃 key 状态，避免抢夺 SpringBoard 主窗口
+        self.resignKey()
+        remLog("MMAirLayerWindow: makeKeyAndVisible + resignKey, frame=\(self.frame)")
     }
 
+    /// 与原版 MobileMeadow 一致：hitTest 恒返回 nil，窗口纯视觉不拦截任何触摸
+    /// 这样飞鸟窗口不会影响桌面图标的点击和滑动手势
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        let view = super.hitTest(point, with: event)
-        return view == self || view == self.rootViewController?.view ? nil : view
+        return nil
+    }
+
+    /// pointInside 恒返回 false，确保窗口不消费任何触摸事件
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        return false
     }
 }

@@ -15,6 +15,15 @@
 - (void)addActiveOrientationObserver:(id)arg1;
 @end
 
+@interface SBDockView : UIView
+@end
+
+@interface MTMaterialView : UIView
+@end
+
+@interface SBIconListPageControl : UIView
+@end
+
 @interface SBApplicationController : NSObject
 + (instancetype)sharedInstance;
 - (id)allApplications;
