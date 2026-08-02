@@ -186,6 +186,8 @@ jobs:
         run: |
           export THEOS="$HOME/theos"
           export THEOS_FAKEROOT=""
+          # 保存项目根目录的绝对路径
+          PROJECT_DIR="$PWD"
           make clean 2>/dev/null || true
           rm -rf .build/ Preferences/.build/ MobileMeadowRebornApps/.build/ 2>/dev/null || true
           rm -rf .theos/ Preferences/.theos/ MobileMeadowRebornApps/.theos/ 2>/dev/null || true
@@ -204,14 +206,14 @@ jobs:
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless ARCHS=arm64 2>&1
           echo "=== Package built, now injecting fat binaries ==="
           FAT_DIR="/tmp/arch_bin/fat"
-          # 找到生成的 deb
-          DEB_FILE=$(ls packages/*.deb 2>/dev/null | head -1)
+          # 找到生成的 deb（使用绝对路径）
+          DEB_FILE=$(ls "$PROJECT_DIR/packages/"*.deb 2>/dev/null | head -1)
           if [ -z "$DEB_FILE" ]; then
             echo "ERROR: No .deb file found!"
+            ls -la "$PROJECT_DIR/packages/" 2>/dev/null || echo "packages dir not found"
             exit 1
           fi
           echo "Original deb: $DEB_FILE"
-          lipo -info "$DEB_FILE" 2>/dev/null || true
           # 解包 deb
           WORK_DIR="/tmp/deb_work"
           rm -rf "$WORK_DIR"
@@ -244,20 +246,14 @@ jobs:
           # 在解压的 data 目录中找到所有 Mach-O 二进制并替换
           find . -type f | while read f; do
             if file "$f" | grep -q "Mach-O"; then
-              # 获取相对于 data/ 的路径
-              rel_path="${f#./}"
-              # 在 fat binaries 目录中查找对应文件
-              # 注意：deb 中的路径是 var/jb/Library/...，而 fat binary 的路径是 .theos/obj/...
-              # 需要按文件名匹配
               bin_name=$(basename "$f")
               fat_candidate=$(find "$FAT_DIR" -name "$bin_name" -type f 2>/dev/null | head -1)
               if [ -n "$fat_candidate" ] && [ -f "$fat_candidate" ]; then
-                echo "Replacing $rel_path with fat binary ($(lipo -info "$fat_candidate" 2>&1 | tail -1))"
+                echo "Replacing $bin_name with fat binary"
                 cp "$fat_candidate" "$f"
-                # 签名（ldid）
                 ldid -S "$f" 2>/dev/null || true
               else
-                echo "WARNING: No fat binary found for $rel_path ($bin_name)"
+                echo "WARNING: No fat binary found for $bin_name"
               fi
             fi
           done
@@ -268,7 +264,7 @@ jobs:
               lipo -info "$f" 2>/dev/null || file "$f"
             fi
           done
-          # 重新打包 data.tar
+          # 重新打包 data.tar（tar 从 data 目录内执行，确保路径以 ./ 开头）
           cd "$WORK_DIR/data"
           rm -f "../data.tar.$DATA_COMP"
           case "$DATA_COMP" in
@@ -285,12 +281,13 @@ jobs:
             ls -la
             exit 1
           fi
-          rm -f "$DEB_FILE"
           ar rcs new.deb debian-binary control.tar.${CONTROL_COMP} data.tar.${DATA_COMP}
-          cp new.deb "$OLDPWD/$DEB_FILE"
-          cd "$OLDPWD"
+          echo "=== Copying fat deb back to packages ==="
+          cp new.deb "$DEB_FILE"
+          cd "$PROJECT_DIR"
           echo "=== Fat binary deb created: $DEB_FILE ==="
           ls -la "$DEB_FILE"
+          lipo -info "$DEB_FILE" 2>/dev/null || true
 
       - name: Verify final architectures
         run: |
