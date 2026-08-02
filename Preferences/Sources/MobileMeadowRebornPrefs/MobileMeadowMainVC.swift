@@ -4,6 +4,7 @@ import MobileMeadowRebornPrefsC
 class MobileMeadowMainVC: PSListController {
 
     let headerView = UIView(frame: CGRect(x: 0, y: 0, width: 200, height: 225))
+    private var headerApplied = false
 
     override init(forContentSize contentSize: CGSize) {
         super.init(forContentSize: contentSize)
@@ -46,10 +47,34 @@ class MobileMeadowMainVC: PSListController {
         super.viewDidLoad()
 
         // iOS 17 兼容：使用安全方法设置 tableHeaderView
-        // PSListController.tableView 在 iOS 17 中可能不可直接访问
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.setTableHeaderView(self.headerView)
+        // 完全不使用 KVC，避免 valueForUndefinedKey: 崩溃
+        applyHeaderView()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+
+        // 如果 viewDidLoad 中未能设置 header（tableView 尚未创建），
+        // 在 viewDidAppear 中再次尝试
+        if !headerApplied {
+            applyHeaderView()
+        }
+    }
+
+    private func applyHeaderView() {
+        guard !headerApplied else { return }
+        if safeTableView() != nil {
+            setTableHeaderView(headerView)
+            headerApplied = true
+        } else {
+            // tableView 尚未加载，延迟重试
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                guard let self = self, !self.headerApplied else { return }
+                if self.safeTableView() != nil {
+                    self.setTableHeaderView(self.headerView)
+                    self.headerApplied = true
+                }
+            }
         }
     }
 

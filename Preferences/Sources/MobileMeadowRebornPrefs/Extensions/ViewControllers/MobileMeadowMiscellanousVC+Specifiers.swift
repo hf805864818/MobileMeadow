@@ -4,11 +4,12 @@ extension MobileMeadowMiscellanousVC {
     
     override var specifiers: NSMutableArray? {
         get {
-            if let specifiers = value(forKey: "_specifiers") as? NSMutableArray {
+            // iOS 17 兼容：使用 ObjC 异常安全包装器访问 _specifiers
+            if let specifiers = safeGetSpecifiers() {
                 return specifiers
             } else {
                 let specifiers = loadSpecifiers(fromPlistName: "MobileMeadowMiscellanous", target: self)
-                setValue(specifiers, forKey: "_specifiers")
+                safeSetSpecifiers(specifiers)
                 return specifiers
             }
         }
