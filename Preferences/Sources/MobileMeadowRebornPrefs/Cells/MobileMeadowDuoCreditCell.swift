@@ -15,7 +15,9 @@ class MobileMeadowDuoCreditCell: PSTableCell {
     
     //MARK: - Initializer
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String, specifier: PSSpecifier) {
-        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        // 必须调用 PSTableCell 的完整初始化器，传递 specifier
+        // 否则 self.specifier 属性不会被设置，后续访问会 nil 崩溃
+        super.init(style: style, reuseIdentifier: reuseIdentifier, specifier: specifier)
         
         let seperatorView: UIView = UIView()
         seperatorView.backgroundColor = UIColor.gray

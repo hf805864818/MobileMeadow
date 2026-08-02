@@ -1,4 +1,5 @@
 import Preferences
+import MobileMeadowRebornPrefsC
 import AudioToolbox.AudioServices
 
 @available(iOS 13.0, *)
@@ -24,9 +25,13 @@ class MobileMeadowInfoButtonCell: PSTableCell {
     
     //MARK: - Initialize
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String, specifier: PSSpecifier) {
-        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        // 必须调用 PSTableCell 的完整初始化器，传递 specifier
+        // 否则 self.specifier 属性不会被设置，后续访问会 nil 崩溃
+        super.init(style: style, reuseIdentifier: reuseIdentifier, specifier: specifier)
 
-        buttonLabel.text = specifier.property(forKey: "buttonLabelText") as? String
+        // 使用 ObjC 异常安全包装器读取 specifier 属性
+        // specifier.property(forKey:) 在 iOS 17 上可能抛出 ObjC 异常
+        buttonLabel.text = MMSafeSpecifierProperty(specifier, "buttonLabelText") as? String
         
         self.translatesAutoresizingMaskIntoConstraints = false
         self.contentView.addSubview(buttonLabel)
@@ -50,7 +55,9 @@ class MobileMeadowInfoButtonCell: PSTableCell {
         guard let viewController = self.findViewController() else { return }
         AudioServicesPlayAlertSound(1521)
         
-        let alertController = UIAlertController(title: buttonLabel.text, message: specifier.property(forKey: "buttonInfoText") as? String, preferredStyle: .alert)
+        // 使用 ObjC 异常安全包装器读取 specifier 属性
+        let infoText = MMSafeSpecifierProperty(specifier, "buttonInfoText") as? String
+        let alertController = UIAlertController(title: buttonLabel.text, message: infoText, preferredStyle: .alert)
         let dismissAction = UIAlertAction(title: "OK", style: .cancel)
         alertController.addAction(dismissAction)
         

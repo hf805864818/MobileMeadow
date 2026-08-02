@@ -88,3 +88,26 @@ NSMutableArray *MMSafeLoadSpecifiers(id controller, NSString *plistName) {
         return nil;
     }
 }
+
+/// iOS 17 兼容：ObjC 异常安全的 PSSpecifier property 读取
+/// PSSpecifier 的 propertyForKey: 在 iOS 17 上可能抛出异常
+/// 此函数用 @try/@catch 包装，返回属性值或 nil
+id MMSafeSpecifierProperty(id specifier, NSString *key) {
+    if (!specifier || !key) {
+        return nil;
+    }
+
+    SEL selector = NSSelectorFromString(@"propertyForKey:");
+    if (![specifier respondsToSelector:selector]) {
+        NSLog(@"[MobileMeadow] MMSafeSpecifierProperty: specifier does not respond to propertyForKey:");
+        return nil;
+    }
+
+    @try {
+        id (*msgSend)(id, SEL, NSString *) = (void *)objc_msgSend;
+        return msgSend(specifier, selector, key);
+    } @catch (NSException *exception) {
+        NSLog(@"[MobileMeadow] MMSafeSpecifierProperty: caught exception for key '%@': %@", key, exception.reason);
+        return nil;
+    }
+}

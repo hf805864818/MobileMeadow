@@ -25,3 +25,8 @@ BOOL MMSafeSetTableHeader(id tableView, UIView *headerView);
 /// （plist 加载失败、cell 类找不到、框架内部变更等），Swift 无法捕获 ObjC 异常
 /// 此函数用 @try/@catch 包装，返回 specifiers 数组或 nil
 NSMutableArray *MMSafeLoadSpecifiers(id controller, NSString *plistName);
+
+/// iOS 17 兼容：ObjC 异常安全的 PSSpecifier property 读取
+/// PSSpecifier 的 propertyForKey: 在 iOS 17 上可能抛出异常
+/// 此函数用 @try/@catch 包装，返回属性值或 nil
+id MMSafeSpecifierProperty(id specifier, NSString *key);
