@@ -38,8 +38,14 @@ struct MobileMeadowReborn: Tweak {
         case true:
             remLog("Tweak is Enabled! :)")
             if dockHook.plantsEnabled {
-                dockHook.activate()
-                remLog("SBPlants hook group activated")
+                // iOS 17 兼容性检查：SBDockIconListView 在 iOS 17 中可能已被移除或重命名
+                if classExists("SBDockIconListView") {
+                    dockHook.activate()
+                    remLog("SBPlants hook group activated (SBDockIconListView found)")
+                } else {
+                    remLog("⚠️ SBDockIconListView not found on this iOS version — plants hook skipped")
+                    remLog("   This is expected on iOS 17+ where SpringBoard dock classes have changed")
+                }
             }
             if sceneHook.birdsEnabled {
                 sceneHook.activate()
@@ -87,29 +93,40 @@ class SBInterfaceHook: ClassHook<SpringBoard> {
 class SBDockHook: ClassHook<SBDockIconListView> {
     typealias Group = SBPlants
     @Property var dockGround: MMGroundContainerView?
+    @Property var hasAttemptedDockGround: Bool = false
     
     func didMoveToWindow() {
         orig.didMoveToWindow()
         
-        DispatchQueue.once {
-            self.createMeadowDockGround()
-        }
+        // 不使用 DispatchQueue.once，改为异步延迟重试机制
+        // DispatchQueue.once 的致命缺陷：如果首次调用时 superview 为 nil，
+        // 它会永久阻止后续重试，导致植物永远不会出现
+        attemptCreateDockGround()
     }
     
     //orion:new
-    func createMeadowDockGround() {
-        guard let superview = target.superview else {
-            remLog("SBDockHook: target.superview is nil, cannot create dock ground")
+    func attemptCreateDockGround() {
+        // 如果已经成功创建，不再重复
+        guard self.dockGround == nil else {
+            remLog("SBDockHook: dockGround already exists, skipping")
             return
         }
-        if (self.dockGround == nil) {
-            remLog("SBDockHook: creating MMGroundContainerView...")
-            self.dockGround = MMGroundContainerView.shared
-            remLog("MeadowGroundDock created...")
-            if let ground = self.dockGround {
-                superview.addSubview(ground)
-                remLog("SBDockHook: ground added to superview, frame=\(ground.frame)")
+        
+        // 如果 superview 尚未就绪，延迟重试
+        guard let superview = target.superview else {
+            remLog("SBDockHook: target.superview is nil, retrying in 0.5s...")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.attemptCreateDockGround()
             }
+            return
+        }
+        
+        remLog("SBDockHook: creating MMGroundContainerView...")
+        self.dockGround = MMGroundContainerView.shared
+        remLog("MeadowGroundDock created...")
+        if let ground = self.dockGround {
+            superview.addSubview(ground)
+            remLog("SBDockHook: ground added to superview, frame=\(ground.frame)")
         }
     }
 }

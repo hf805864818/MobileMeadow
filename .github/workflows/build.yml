@@ -114,6 +114,23 @@ jobs:
             make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless VERBOSE=1
           }
 
+      - name: Verify architectures
+        run: |
+          echo "=== Checking architecture of built binaries ==="
+          # Find all .dylib files in the build output
+          find . -name "*.dylib" -path "*/MobileMeadow*" 2>/dev/null | while read dylib; do
+            echo "--- $dylib ---"
+            if command -v lipo &>/dev/null; then
+              lipo -info "$dylib" 2>/dev/null || echo "  (not a fat binary or lipo failed)"
+            fi
+            file "$dylib" 2>/dev/null
+          done
+          # Also check the .deb contents
+          for deb in packages/*.deb; do
+            echo "=== $deb ==="
+            dpkg-deb -c "$deb" 2>/dev/null || ar t "$deb" 2>/dev/null || echo "  (cannot list contents)"
+          done
+
       - name: List build artifacts
         run: |
           echo "=== Build artifacts ==="

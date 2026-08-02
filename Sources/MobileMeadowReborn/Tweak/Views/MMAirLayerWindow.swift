@@ -30,6 +30,7 @@ import MobileMeadowRebornC
 class MMAirLayerWindow: UIWindow {
     
     private var sceneObserver: NSObjectProtocol?
+    private var fallbackTimer: Timer?
     
     //MARK: - Initializer
     override init(frame: CGRect) {
@@ -43,19 +44,21 @@ class MMAirLayerWindow: UIWindow {
     }
     
     private func commonInit() {
+        // 关键：设置透明背景，否则会遮挡 SpringBoard 桌面
+        self.backgroundColor = .clear
         self.windowLevel = UIWindow.Level.alert - 1
         self.rootViewController = MMAirLayerViewController.shared
         
-        // iOS 17 兼容：使用 connectedScenes
+        // iOS 17 兼容：尝试连接活跃场景
         if let scene = findActiveScene() {
             self.windowScene = scene
             remLog("MMAirLayerWindow: attached to scene \(scene)")
             self.makeKeyAndVisible()
         } else {
-            // 场景尚未就绪，注册观察者等待场景连接
-            remLog("MMAirLayerWindow: no active scene found, waiting for scene connection...")
+            remLog("MMAirLayerWindow: no active scene found, registering observers...")
+            // 方案1：监听 didActivateNotification（场景激活后，比 willConnect 更可靠）
             sceneObserver = NotificationCenter.default.addObserver(
-                forName: UIScene.willConnectNotification,
+                forName: UIScene.didActivateNotification,
                 object: nil,
                 queue: .main
             ) { [weak self] notification in
@@ -63,11 +66,26 @@ class MMAirLayerWindow: UIWindow {
                       self.windowScene == nil,
                       let scene = notification.object as? UIWindowScene else { return }
                 self.windowScene = scene
-                remLog("MMAirLayerWindow: attached to scene via observer \(scene)")
+                remLog("MMAirLayerWindow: attached to scene via didActivate observer \(scene)")
                 self.makeKeyAndVisible()
+                self.fallbackTimer?.invalidate()
+                self.fallbackTimer = nil
                 if let observer = self.sceneObserver {
                     NotificationCenter.default.removeObserver(observer)
                     self.sceneObserver = nil
+                }
+            }
+            
+            // 方案2：兜底定时器，如果 3 秒后仍未连接场景，强制尝试连接
+            fallbackTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
+                guard let self = self, self.windowScene == nil else { return }
+                if let scene = self.findActiveScene() {
+                    self.windowScene = scene
+                    remLog("MMAirLayerWindow: attached to scene via fallback timer \(scene)")
+                    self.makeKeyAndVisible()
+                } else {
+                    remLog("MMAirLayerWindow: still no scene after 3s, forcing makeKeyAndVisible")
+                    self.makeKeyAndVisible()
                 }
             }
         }
@@ -90,11 +108,13 @@ class MMAirLayerWindow: UIWindow {
         if let observer = sceneObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+        fallbackTimer?.invalidate()
     }
     
     //MARK: - Overrides
     override func makeKeyAndVisible() {
         super.makeKeyAndVisible()
+        remLog("MMAirLayerWindow: makeKeyAndVisible, isHidden=\(self.isHidden), windowScene=\(String(describing: self.windowScene))")
     }
     
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {

@@ -31,6 +31,9 @@ class MMAirLayerViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        // 关键：设置透明背景，否则会遮挡 SpringBoard 桌面
+        self.view.backgroundColor = .clear
+        
         NotificationCenter.default.addObserver(self, selector: #selector(updateAllBirds), name: UIDevice.orientationDidChangeNotification, object: nil)
         setRandomTimer()
     }
