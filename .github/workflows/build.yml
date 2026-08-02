@@ -214,37 +214,18 @@ jobs:
             exit 1
           fi
           echo "Original deb: $DEB_FILE"
-          # 解包 deb
+          # 使用 dpkg-deb 解包整个 deb（包括 control 文件和数据）
           WORK_DIR="/tmp/deb_work"
           rm -rf "$WORK_DIR"
-          mkdir -p "$WORK_DIR"
-          cp "$DEB_FILE" "$WORK_DIR/original.deb"
-          cd "$WORK_DIR"
-          ar x original.deb
-          ls -la
-          # 解压 data.tar（支持多种压缩格式）
-          mkdir -p data
-          cd data
-          if [ -f ../data.tar.lzma ]; then
-            tar -xf ../data.tar.lzma
-            DATA_COMP="lzma"
-          elif [ -f ../data.tar.gz ]; then
-            tar -xzf ../data.tar.gz
-            DATA_COMP="gz"
-          elif [ -f ../data.tar.xz ]; then
-            tar -xJf ../data.tar.xz
-            DATA_COMP="xz"
-          elif [ -f ../data.tar.zst ]; then
-            tar --zstd -xf ../data.tar.zst
-            DATA_COMP="zst"
-          else
-            echo "ERROR: Unknown data.tar format"
-            ls ../data.tar*
-            exit 1
-          fi
-          echo "=== Data extracted, replacing binaries with fat versions ==="
-          # 在解压的 data 目录中找到所有 Mach-O 二进制并替换
-          find . -type f | while read f; do
+          mkdir -p "$WORK_DIR/root"
+          # dpkg-deb -R 解压完整目录结构（DEBIAN/ + 数据文件）
+          dpkg-deb -R "$DEB_FILE" "$WORK_DIR/root"
+          echo "=== Extracted deb contents ==="
+          ls -la "$WORK_DIR/root/"
+          ls -la "$WORK_DIR/root/DEBIAN/" 2>/dev/null
+          echo "=== Replacing binaries with fat versions ==="
+          # 在解压的数据中找到所有 Mach-O 二进制并替换
+          find "$WORK_DIR/root" -type f -not -path "$WORK_DIR/root/DEBIAN/*" | while read f; do
             if file "$f" | grep -q "Mach-O"; then
               bin_name=$(basename "$f")
               fat_candidate=$(find "$FAT_DIR" -name "$bin_name" -type f 2>/dev/null | head -1)
@@ -257,61 +238,37 @@ jobs:
               fi
             fi
           done
-          echo "=== Verifying architectures in deb data ==="
-          find . -type f | while read f; do
+          echo "=== Verifying architectures ==="
+          find "$WORK_DIR/root" -type f -not -path "$WORK_DIR/root/DEBIAN/*" | while read f; do
             if file "$f" | grep -q "Mach-O"; then
               echo "--- $f ---"
               lipo -info "$f" 2>/dev/null || file "$f"
             fi
           done
-          # 重新打包 data.tar（tar 从 data 目录内执行，确保路径以 ./ 开头）
-          cd "$WORK_DIR/data"
-          rm -f "../data.tar.$DATA_COMP"
-          case "$DATA_COMP" in
-            lzma) tar --lzma -cf ../data.tar.lzma . ;;
-            gz) tar -czf ../data.tar.gz . ;;
-            xz) tar -cJf ../data.tar.xz . ;;
-            zst) tar --zstd -cf ../data.tar.zst . ;;
-          esac
-          # 重新打包 deb（注意：不能用 ar rcs 的 s 标志，s 会创建 ranlib 符号表破坏 deb 格式）
-          # deb 格式要求文件顺序：debian-binary → control.tar → data.tar
-          cd "$WORK_DIR"
-          CONTROL_COMP=$(ls control.tar.* 2>/dev/null | head -1 | sed 's/control\.tar\.//')
-          if [ -z "$CONTROL_COMP" ]; then
-            echo "ERROR: Cannot find control.tar.*"
-            ls -la
-            exit 1
-          fi
-          rm -f new.deb
-          ar r new.deb debian-binary control.tar.${CONTROL_COMP} data.tar.${DATA_COMP}
-          echo "=== Copying fat deb back to packages ==="
-          cp new.deb "$DEB_FILE"
+          # 使用 dpkg-deb -b 重新打包
+          echo "=== Rebuilding deb with dpkg-deb ==="
+          NEW_DEB="$PROJECT_DIR/packages/$(basename "$DEB_FILE")"
+          rm -f "$NEW_DEB"
+          dpkg-deb -b --root-owner-group "$WORK_DIR/root" "$NEW_DEB"
           cd "$PROJECT_DIR"
-          echo "=== Fat binary deb created: $DEB_FILE ==="
-          ls -la "$DEB_FILE"
-          lipo -info "$DEB_FILE" 2>/dev/null || true
+          echo "=== Fat binary deb created: $NEW_DEB ==="
+          ls -la "$NEW_DEB"
+          dpkg-deb -I "$NEW_DEB" 2>&1 | head -20
 
       - name: Verify final architectures
         run: |
           echo "=== Final deb architecture verification ==="
           for deb in packages/*.deb; do
             echo "=== $deb ==="
-            # 临时解压验证
+            dpkg-deb -I "$deb" 2>&1 | grep -E "Package|Version|Architecture"
             TMPDIR=$(mktemp -d)
-            cd "$TMPDIR"
-            ar x "$OLDPWD/$deb" 2>/dev/null
-            mkdir -p data
-            cd data
-            if [ -f ../data.tar.lzma ]; then tar -xf ../data.tar.lzma; fi
-            if [ -f ../data.tar.gz ]; then tar -xzf ../data.tar.gz; fi
-            if [ -f ../data.tar.xz ]; then tar -xJf ../data.tar.xz; fi
-            find . -type f | while read f; do
+            dpkg-deb -R "$deb" "$TMPDIR/root" 2>/dev/null
+            find "$TMPDIR/root" -type f -not -path "$TMPDIR/root/DEBIAN/*" | while read f; do
               if file "$f" | grep -q "Mach-O"; then
                 echo "--- $f ---"
                 lipo -info "$f" 2>/dev/null || file "$f"
               fi
             done
-            cd "$OLDPWD"
             rm -rf "$TMPDIR"
           done
 
