@@ -92,8 +92,3 @@ fi
 # ---- 输出新版本号（供 CI 使用） ----
 echo ""
 echo "NEW_VERSION=${NEW_VERSION}"
-
-# 导出为 GitHub Actions 输出（如果在 CI 环境中）
-if [ -n "${GITHUB_OUTPUT:-}" ]; then
-    echo "new_version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
-fi

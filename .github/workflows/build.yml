@@ -79,13 +79,13 @@ jobs:
           cat /tmp/version_output.txt
 
           # 从 control 文件读取版本号（可能是脚本更新后的，也可能是原始的）
-          NEW_VERSION=$(grep "^Version:" control | awk '{print $2}')
+          NEW_VERSION=$(grep "^Version:" control | awk '{print $2}' | tr -d '[:space:]')
           # 如果脚本失败了，使用当前版本号
           if [ -z "$NEW_VERSION" ]; then
             NEW_VERSION="1.0.15"
           fi
-          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
-          echo "Build version: $NEW_VERSION"
+          echo "new_version=${NEW_VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "Build version: ${NEW_VERSION}"
 
       - name: Commit version bump
         run: |
