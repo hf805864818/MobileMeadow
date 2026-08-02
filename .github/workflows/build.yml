@@ -75,17 +75,19 @@ jobs:
           echo "Build version: ${CURRENT_VERSION}"
 
       # ============================================================
-      # 步骤 1：生成 SPM 配置并立即恢复我们的 Package.swift
-      # make spm 会用 Theos 模板（硬编码 arm64）覆盖我们的动态架构版本
+      # 步骤 1：生成 SPM 配置
+      # Theos 的 make spm 不生成 arch 字段，需要手动追加
+      # Package.swift 通过 spm_config 的 arch 字段或 THEOS_CURRENT_ARCH
+      # 环境变量动态选择目标架构
       # ============================================================
-      - name: Generate SPM config and restore Package.swift
+      - name: Generate SPM config
         run: |
           export THEOS="$HOME/theos"
           make spm
-          # 恢复我们的 Package.swift（含动态架构检测），被 make spm 的模板覆盖了
-          git checkout -- Package.swift Preferences/Package.swift MobileMeadowRebornApps/Package.swift
-          echo "=== Package.swift files restored ==="
-          head -48 Package.swift | tail -3
+          # Theos make spm 不生成 arch 字段，手动追加默认值
+          echo "arch=arm64" >> .theos/spm_config
+          echo "=== .theos/spm_config ==="
+          cat .theos/spm_config
 
       # ============================================================
       # 步骤 2：构建 arm64
@@ -94,16 +96,16 @@ jobs:
         run: |
           export THEOS="$HOME/theos"
           export THEOS_FAKEROOT=""
+          export THEOS_CURRENT_ARCH=arm64
           make clean 2>/dev/null || true
           # 清理 SPM 构建缓存，确保干净编译
           rm -rf .build/ Preferences/.build/ MobileMeadowRebornApps/.build/ 2>/dev/null || true
           rm -rf .theos/obj/ 2>/dev/null || true
-          # make spm ARCHS=arm64 生成 .theos/spm_config（arch=arm64）
-          make spm ARCHS=arm64 2>/dev/null || make spm
-          # 恢复 Package.swift（被 make spm 覆盖）
-          git checkout -- Package.swift Preferences/Package.swift MobileMeadowRebornApps/Package.swift
+          # 生成 spm_config 并注入 arch=arm64
+          make spm 2>/dev/null || make spm
+          echo "arch=arm64" >> .theos/spm_config
           echo "=== .theos/spm_config for arm64 ==="
-          grep "^arch=" .theos/spm_config 2>/dev/null || echo "no spm_config yet"
+          cat .theos/spm_config
           make all ARCHS=arm64 2>&1
           echo "=== arm64 build complete ==="
           mkdir -p /tmp/arm64_dylibs
@@ -115,29 +117,25 @@ jobs:
 
       # ============================================================
       # 步骤 3：构建 arm64e
-      # 关键：make clean 后 make all 会触发 make spm，覆盖 Package.swift
-      # 所以必须先 make spm，再 git checkout 恢复 Package.swift，
-      # 然后 patch .theos/spm_config 把 arch=arm64 改为 arch=arm64e
+      # Theos make spm 不生成 arch 字段，需手动注入 arch=arm64e
+      # Package.swift 读取 spm_config 的 arch 字段（或 THEOS_CURRENT_ARCH
+      # 环境变量）来设置 SPM 编译目标 triple
       # 同时清理 SPM .build/ 缓存，防止复用 arm64 编译产物
       # ============================================================
       - name: Build for arm64e
         run: |
           export THEOS="$HOME/theos"
           export THEOS_FAKEROOT=""
+          export THEOS_CURRENT_ARCH=arm64e
           make clean 2>/dev/null || true
           # 清理 SPM 构建缓存（关键：防止复用 arm64 的 .build/ 缓存）
           rm -rf .build/ Preferences/.build/ MobileMeadowRebornApps/.build/ 2>/dev/null || true
           rm -rf .theos/obj/ 2>/dev/null || true
-          # 先运行 make spm（生成 .theos/spm_config，但 arch=arm64）
-          make spm 2>/dev/null || true
-          # 恢复 Package.swift（含动态架构检测）
-          git checkout -- Package.swift Preferences/Package.swift MobileMeadowRebornApps/Package.swift
-          # 修补 .theos/spm_config：把 arch=arm64 改为 arch=arm64e
-          if [ -f .theos/spm_config ]; then
-            sed -i '' 's/^arch=arm64$/arch=arm64e/' .theos/spm_config
-            echo "=== patched .theos/spm_config arch to arm64e ==="
-            grep "^arch=" .theos/spm_config
-          fi
+          # 生成 spm_config 并注入 arch=arm64e
+          make spm 2>/dev/null || make spm
+          echo "arch=arm64e" >> .theos/spm_config
+          echo "=== .theos/spm_config for arm64e ==="
+          cat .theos/spm_config
           # 构建 arm64e
           make all ARCHS=arm64e 2>&1
           echo "=== arm64e build complete ==="
@@ -187,11 +185,12 @@ jobs:
         run: |
           export THEOS="$HOME/theos"
           export THEOS_FAKEROOT=""
+          export THEOS_CURRENT_ARCH=arm64
           make clean 2>/dev/null || true
           rm -rf .build/ Preferences/.build/ MobileMeadowRebornApps/.build/ 2>/dev/null || true
           rm -rf .theos/obj/ 2>/dev/null || true
-          make spm 2>/dev/null || true
-          git checkout -- Package.swift Preferences/Package.swift MobileMeadowRebornApps/Package.swift
+          make spm 2>/dev/null || make spm
+          echo "arch=arm64" >> .theos/spm_config
           make all ARCHS=arm64 2>&1
           echo "=== Replacing with fat binaries ==="
           find . -name "*.dylib" \( -path "*/MobileMeadowReborn.dylib" -o -path "*/MobileMeadowRebornApps.dylib" \) 2>/dev/null | while read dylib; do

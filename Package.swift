@@ -45,7 +45,8 @@ let theosPath = conf.theos
 let sdk = conf.sdk
 let resourceDir = conf.swiftResourceDir
 let deploymentTarget = conf.deploymentTarget
-let triple = "arm64-apple-ios\(deploymentTarget)"
+let arch = conf[key: "arch", or: ProcessInfo.processInfo.environment["THEOS_CURRENT_ARCH"] ?? "arm64"]
+let triple = "\(arch)-apple-ios\(deploymentTarget)"
 
 let libFlags: [String] = [
     "-F\(theosPath)/vendor/lib", "-F\(theosPath)/lib",
