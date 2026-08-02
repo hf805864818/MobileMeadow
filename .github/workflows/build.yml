@@ -75,145 +75,245 @@ jobs:
           echo "Build version: ${CURRENT_VERSION}"
 
       # ============================================================
-      # 步骤 1：生成 SPM 配置
-      # Theos 的 make spm 不生成 arch 字段，需要手动追加
-      # Package.swift 通过 spm_config 的 arch 字段或 THEOS_CURRENT_ARCH
-      # 环境变量动态选择目标架构
+      # Helper function: build for a specific architecture and save binaries
+      # Usage: build_arch <arch> <output_dir>
       # ============================================================
-      - name: Generate SPM config
-        run: |
-          export THEOS="$HOME/theos"
-          make spm
-          # Theos make spm 不生成 arch 字段，手动追加默认值
-          echo "arch=arm64" >> .theos/spm_config
-          echo "=== .theos/spm_config ==="
-          cat .theos/spm_config
 
       # ============================================================
-      # 步骤 2：构建 arm64
+      # 步骤 1：构建 arm64 并保存所有 Mach-O 二进制
       # ============================================================
       - name: Build for arm64
         run: |
           export THEOS="$HOME/theos"
           export THEOS_FAKEROOT=""
-          export THEOS_CURRENT_ARCH=arm64
           make clean 2>/dev/null || true
-          # 清理 SPM 构建缓存，确保干净编译
           rm -rf .build/ Preferences/.build/ MobileMeadowRebornApps/.build/ 2>/dev/null || true
-          rm -rf .theos/obj/ 2>/dev/null || true
-          # 生成 spm_config 并注入 arch=arm64
+          rm -rf .theos/ Preferences/.theos/ MobileMeadowRebornApps/.theos/ 2>/dev/null || true
           make spm 2>/dev/null || make spm
           echo "arch=arm64" >> .theos/spm_config
           echo "=== .theos/spm_config for arm64 ==="
           cat .theos/spm_config
           make all ARCHS=arm64 2>&1
-          echo "=== arm64 build complete ==="
-          mkdir -p /tmp/arm64_dylibs
-          find . -name "*.dylib" \( -path "*/MobileMeadowReborn.dylib" -o -path "*/MobileMeadowRebornApps.dylib" \) 2>/dev/null | while read dylib; do
-            cp "$dylib" "/tmp/arm64_dylibs/$(basename $dylib)"
-            echo "Saved arm64: $(basename $dylib)"
+          echo "=== arm64 build complete, saving binaries ==="
+          # 保存所有 Mach-O 二进制（主项目 + 子项目），保留相对路径
+          SAVE_DIR="/tmp/arch_bin/arm64"
+          rm -rf "$SAVE_DIR"
+          mkdir -p "$SAVE_DIR"
+          find . -path "*/.theos/obj/*" -type f \( -name "*.dylib" -o -name "MobileMeadowRebornPrefs" \) 2>/dev/null | while read f; do
+            if file "$f" | grep -q "Mach-O"; then
+              rel_path="${f#./}"
+              mkdir -p "$SAVE_DIR/$(dirname "$rel_path")"
+              cp "$f" "$SAVE_DIR/$rel_path"
+              echo "Saved arm64: $rel_path ($(file "$f" | grep -o 'Mach-O [^,]*'))"
+            fi
           done
-          ls -la /tmp/arm64_dylibs/ 2>/dev/null || echo "No arm64 dylibs found"
+          echo "=== arm64 binaries saved ==="
+          find "$SAVE_DIR" -type f
 
       # ============================================================
-      # 步骤 3：构建 arm64e
-      # Theos make spm 不生成 arch 字段，需手动注入 arch=arm64e
-      # Package.swift 读取 spm_config 的 arch 字段（或 THEOS_CURRENT_ARCH
-      # 环境变量）来设置 SPM 编译目标 triple
-      # 同时清理 SPM .build/ 缓存，防止复用 arm64 编译产物
+      # 步骤 2：构建 arm64e 并保存所有 Mach-O 二进制
       # ============================================================
       - name: Build for arm64e
         run: |
           export THEOS="$HOME/theos"
           export THEOS_FAKEROOT=""
-          export THEOS_CURRENT_ARCH=arm64e
           make clean 2>/dev/null || true
-          # 清理 SPM 构建缓存（关键：防止复用 arm64 的 .build/ 缓存）
           rm -rf .build/ Preferences/.build/ MobileMeadowRebornApps/.build/ 2>/dev/null || true
-          rm -rf .theos/obj/ 2>/dev/null || true
-          # 生成 spm_config 并注入 arch=arm64e
+          rm -rf .theos/ Preferences/.theos/ MobileMeadowRebornApps/.theos/ 2>/dev/null || true
           make spm 2>/dev/null || make spm
           echo "arch=arm64e" >> .theos/spm_config
-          echo "=== .theos/spm_config for arm64e ==="
-          cat .theos/spm_config
-          # 构建 arm64e
-          make all ARCHS=arm64e 2>&1
-          echo "=== arm64e build complete ==="
-          mkdir -p /tmp/arm64e_dylibs
-          find . -name "*.dylib" \( -path "*/MobileMeadowReborn.dylib" -o -path "*/MobileMeadowRebornApps.dylib" \) 2>/dev/null | while read dylib; do
-            cp "$dylib" "/tmp/arm64e_dylibs/$(basename $dylib)"
-            echo "Saved arm64e: $(basename $dylib)"
-          done
-          ls -la /tmp/arm64e_dylibs/ 2>/dev/null || echo "No arm64e dylibs found"
-
-      # ============================================================
-      # 步骤 4：验证架构后合并为 fat binary
-      # ============================================================
-      - name: Verify architectures and create fat binaries
-        run: |
-          echo "=== Verifying arm64 dylibs ==="
-          for dylib in /tmp/arm64_dylibs/*.dylib; do
-            echo "--- $(basename $dylib) ---"
-            lipo -info "$dylib" 2>/dev/null || file "$dylib"
-          done
-          echo "=== Verifying arm64e dylibs ==="
-          for dylib in /tmp/arm64e_dylibs/*.dylib; do
-            echo "--- $(basename $dylib) ---"
-            lipo -info "$dylib" 2>/dev/null || file "$dylib"
-          done
-          echo "=== Creating fat binaries ==="
-          mkdir -p /tmp/fat_dylibs
-          for arm64_dylib in /tmp/arm64_dylibs/*.dylib; do
-            dylib_name=$(basename "$arm64_dylib")
-            arm64e_dylib="/tmp/arm64e_dylibs/${dylib_name}"
-            fat_dylib="/tmp/fat_dylibs/${dylib_name}"
-            if [ -f "$arm64e_dylib" ]; then
-              echo "Combining ${dylib_name}: arm64 + arm64e"
-              lipo -create "$arm64_dylib" "$arm64e_dylib" -output "$fat_dylib"
-              lipo -info "$fat_dylib"
-            else
-              echo "WARNING: arm64e variant not found for ${dylib_name}, using arm64 only"
-              cp "$arm64_dylib" "$fat_dylib"
+          # 子项目的 spm_config 也需要注入 arch
+          for proj in Preferences MobileMeadowRebornApps; do
+            if [ -f "$proj/.theos/spm_config" ]; then
+              echo "arch=arm64e" >> "$proj/.theos/spm_config"
             fi
           done
-          ls -la /tmp/fat_dylibs/
+          echo "=== .theos/spm_config for arm64e ==="
+          cat .theos/spm_config
+          make all ARCHS=arm64e 2>&1
+          echo "=== arm64e build complete, saving binaries ==="
+          SAVE_DIR="/tmp/arch_bin/arm64e"
+          rm -rf "$SAVE_DIR"
+          mkdir -p "$SAVE_DIR"
+          find . -path "*/.theos/obj/*" -type f \( -name "*.dylib" -o -name "MobileMeadowRebornPrefs" \) 2>/dev/null | while read f; do
+            if file "$f" | grep -q "Mach-O"; then
+              rel_path="${f#./}"
+              mkdir -p "$SAVE_DIR/$(dirname "$rel_path")"
+              cp "$f" "$SAVE_DIR/$rel_path"
+              echo "Saved arm64e: $rel_path ($(file "$f" | grep -o 'Mach-O [^,]*'))"
+            fi
+          done
+          echo "=== arm64e binaries saved ==="
+          find "$SAVE_DIR" -type f
 
       # ============================================================
-      # 步骤 5：用 fat binary 替换后打包
+      # 步骤 3：创建 fat binaries
+      # ============================================================
+      - name: Create fat binaries
+        run: |
+          echo "=== Creating fat binaries ==="
+          FAT_DIR="/tmp/arch_bin/fat"
+          rm -rf "$FAT_DIR"
+          mkdir -p "$FAT_DIR"
+          ARM64_DIR="/tmp/arch_bin/arm64"
+          ARM64E_DIR="/tmp/arch_bin/arm64e"
+          # 遍历所有 arm64 二进制，与 arm64e 对应文件合并
+          find "$ARM64_DIR" -type f | while read arm64_file; do
+            rel_path="${arm64_file#$ARM64_DIR/}"
+            arm64e_file="$ARM64E_DIR/$rel_path"
+            fat_file="$FAT_DIR/$rel_path"
+            mkdir -p "$(dirname "$fat_file")"
+            if [ -f "$arm64e_file" ]; then
+              echo "Creating fat: $rel_path"
+              lipo -create "$arm64_file" "$arm64e_file" -output "$fat_file"
+              lipo -info "$fat_file"
+            else
+              echo "WARNING: no arm64e for $rel_path, using arm64 only"
+              cp "$arm64_file" "$fat_file"
+            fi
+          done
+          echo "=== Fat binaries created ==="
+          find "$FAT_DIR" -type f | while read f; do
+            echo "--- $f ---"
+            lipo -info "$f"
+          done
+
+      # ============================================================
+      # 步骤 4：构建 arm64 包，然后替换二进制为 fat binary，重新打包
+      # 采用"解包-替换-重新打包"方案，确保 fat binary 进入最终 deb
       # ============================================================
       - name: Package with fat binaries
         run: |
           export THEOS="$HOME/theos"
           export THEOS_FAKEROOT=""
-          export THEOS_CURRENT_ARCH=arm64
           make clean 2>/dev/null || true
           rm -rf .build/ Preferences/.build/ MobileMeadowRebornApps/.build/ 2>/dev/null || true
-          rm -rf .theos/obj/ 2>/dev/null || true
+          rm -rf .theos/ Preferences/.theos/ MobileMeadowRebornApps/.theos/ 2>/dev/null || true
           make spm 2>/dev/null || make spm
           echo "arch=arm64" >> .theos/spm_config
-          make all ARCHS=arm64 2>&1
-          echo "=== Replacing with fat binaries ==="
-          find . -name "*.dylib" \( -path "*/MobileMeadowReborn.dylib" -o -path "*/MobileMeadowRebornApps.dylib" \) 2>/dev/null | while read dylib; do
-            dylib_name=$(basename "$dylib")
-            fat_dylib="/tmp/fat_dylibs/${dylib_name}"
-            if [ -f "$fat_dylib" ]; then
-              cp "$fat_dylib" "$dylib"
-              echo "Replaced ${dylib_name} with fat binary"
-              lipo -info "$dylib"
+          # 子项目也注入 arch
+          for proj in Preferences MobileMeadowRebornApps; do
+            if [ -d "$proj" ]; then
+              (cd "$proj" && make spm 2>/dev/null || true)
+              if [ -f "$proj/.theos/spm_config" ]; then
+                grep -q "^arch=" "$proj/.theos/spm_config" || echo "arch=arm64" >> "$proj/.theos/spm_config"
+              fi
             fi
           done
-          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless 2>&1
+          echo "=== Building package (arm64 base) ==="
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless ARCHS=arm64 2>&1
+          echo "=== Package built, now injecting fat binaries ==="
+          FAT_DIR="/tmp/arch_bin/fat"
+          # 找到生成的 deb
+          DEB_FILE=$(ls packages/*.deb 2>/dev/null | head -1)
+          if [ -z "$DEB_FILE" ]; then
+            echo "ERROR: No .deb file found!"
+            exit 1
+          fi
+          echo "Original deb: $DEB_FILE"
+          lipo -info "$DEB_FILE" 2>/dev/null || true
+          # 解包 deb
+          WORK_DIR="/tmp/deb_work"
+          rm -rf "$WORK_DIR"
+          mkdir -p "$WORK_DIR"
+          cp "$DEB_FILE" "$WORK_DIR/original.deb"
+          cd "$WORK_DIR"
+          ar x original.deb
+          ls -la
+          # 解压 data.tar（支持多种压缩格式）
+          mkdir -p data
+          cd data
+          if [ -f ../data.tar.lzma ]; then
+            tar -xf ../data.tar.lzma
+            DATA_COMP="lzma"
+          elif [ -f ../data.tar.gz ]; then
+            tar -xzf ../data.tar.gz
+            DATA_COMP="gz"
+          elif [ -f ../data.tar.xz ]; then
+            tar -xJf ../data.tar.xz
+            DATA_COMP="xz"
+          elif [ -f ../data.tar.zst ]; then
+            tar --zstd -xf ../data.tar.zst
+            DATA_COMP="zst"
+          else
+            echo "ERROR: Unknown data.tar format"
+            ls ../data.tar*
+            exit 1
+          fi
+          echo "=== Data extracted, replacing binaries with fat versions ==="
+          # 在解压的 data 目录中找到所有 Mach-O 二进制并替换
+          find . -type f | while read f; do
+            if file "$f" | grep -q "Mach-O"; then
+              # 获取相对于 data/ 的路径
+              rel_path="${f#./}"
+              # 在 fat binaries 目录中查找对应文件
+              # 注意：deb 中的路径是 var/jb/Library/...，而 fat binary 的路径是 .theos/obj/...
+              # 需要按文件名匹配
+              bin_name=$(basename "$f")
+              fat_candidate=$(find "$FAT_DIR" -name "$bin_name" -type f 2>/dev/null | head -1)
+              if [ -n "$fat_candidate" ] && [ -f "$fat_candidate" ]; then
+                echo "Replacing $rel_path with fat binary ($(lipo -info "$fat_candidate" 2>&1 | tail -1))"
+                cp "$fat_candidate" "$f"
+                # 签名（ldid）
+                ldid -S "$f" 2>/dev/null || true
+              else
+                echo "WARNING: No fat binary found for $rel_path ($bin_name)"
+              fi
+            fi
+          done
+          echo "=== Verifying architectures in deb data ==="
+          find . -type f | while read f; do
+            if file "$f" | grep -q "Mach-O"; then
+              echo "--- $f ---"
+              lipo -info "$f" 2>/dev/null || file "$f"
+            fi
+          done
+          # 重新打包 data.tar
+          cd "$WORK_DIR/data"
+          rm -f "../data.tar.$DATA_COMP"
+          case "$DATA_COMP" in
+            lzma) tar --lzma -cf ../data.tar.lzma . ;;
+            gz) tar -czf ../data.tar.gz . ;;
+            xz) tar -cJf ../data.tar.xz . ;;
+            zst) tar --zstd -cf ../data.tar.zst . ;;
+          esac
+          # 重新打包 deb
+          cd "$WORK_DIR"
+          CONTROL_COMP=$(ls control.tar.* 2>/dev/null | head -1 | sed 's/control\.tar\.//')
+          if [ -z "$CONTROL_COMP" ]; then
+            echo "ERROR: Cannot find control.tar.*"
+            ls -la
+            exit 1
+          fi
+          rm -f "$DEB_FILE"
+          ar rcs new.deb debian-binary control.tar.${CONTROL_COMP} data.tar.${DATA_COMP}
+          cp new.deb "$OLDPWD/$DEB_FILE"
+          cd "$OLDPWD"
+          echo "=== Fat binary deb created: $DEB_FILE ==="
+          ls -la "$DEB_FILE"
 
       - name: Verify final architectures
         run: |
-          echo "=== Final architecture verification ==="
-          find . -name "*.dylib" \( -path "*/MobileMeadowReborn.dylib" -o -path "*/MobileMeadowRebornApps.dylib" \) 2>/dev/null | while read dylib; do
-            echo "--- $dylib ---"
-            lipo -info "$dylib" 2>/dev/null || file "$dylib"
-          done
+          echo "=== Final deb architecture verification ==="
           for deb in packages/*.deb; do
             echo "=== $deb ==="
-            dpkg-deb -c "$deb" 2>/dev/null || ar t "$deb" 2>/dev/null || echo "  (cannot list contents)"
+            # 临时解压验证
+            TMPDIR=$(mktemp -d)
+            cd "$TMPDIR"
+            ar x "$OLDPWD/$deb" 2>/dev/null
+            mkdir -p data
+            cd data
+            if [ -f ../data.tar.lzma ]; then tar -xf ../data.tar.lzma; fi
+            if [ -f ../data.tar.gz ]; then tar -xzf ../data.tar.gz; fi
+            if [ -f ../data.tar.xz ]; then tar -xJf ../data.tar.xz; fi
+            find . -type f | while read f; do
+              if file "$f" | grep -q "Mach-O"; then
+                echo "--- $f ---"
+                lipo -info "$f" 2>/dev/null || file "$f"
+              fi
+            done
+            cd "$OLDPWD"
+            rm -rf "$TMPDIR"
           done
 
       - name: List and upload artifacts
