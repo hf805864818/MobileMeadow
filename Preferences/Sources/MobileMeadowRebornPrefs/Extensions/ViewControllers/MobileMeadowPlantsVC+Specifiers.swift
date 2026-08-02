@@ -8,7 +8,8 @@ extension MobileMeadowPlantsVC {
             if let specifiers = safeGetSpecifiers() {
                 return specifiers
             } else {
-                let specifiers = loadSpecifiers(fromPlistName: "MobileMeadowPlants", target: self)
+                // 使用 ObjC 异常安全包装器加载 specifiers
+                let specifiers = safeLoadSpecifiers(fromPlistName: "MobileMeadowPlants")
                 safeSetSpecifiers(specifiers)
                 return specifiers
             }

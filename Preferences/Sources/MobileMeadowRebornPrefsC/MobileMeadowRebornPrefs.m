@@ -1,4 +1,5 @@
 #import "MobileMeadowRebornPrefs.h"
+#import <objc/message.h>
 
 // Thanks to @Nightwind for his respring method (changed from "sbreload" to "killall SpringBoard")
 void respring(void) {
@@ -58,5 +59,32 @@ BOOL MMSafeSetTableHeader(id tableView, UIView *headerView) {
     } @catch (NSException *exception) {
         NSLog(@"[MobileMeadow] MMSafeSetTableHeader: caught exception: %@", exception.reason);
         return NO;
+    }
+}
+
+/// iOS 17 兼容：ObjC 异常安全的 loadSpecifiers 调用
+/// 通过 objc_msgSend 调用 PSListController 的 loadSpecifiersFromPlistName:target:
+/// 用 @try/@catch 包装，防止 plist 加载失败或 cell 类实例化失败时崩溃
+NSMutableArray *MMSafeLoadSpecifiers(id controller, NSString *plistName) {
+    if (!controller || !plistName) {
+        NSLog(@"[MobileMeadow] MMSafeLoadSpecifiers: invalid arguments");
+        return nil;
+    }
+
+    SEL selector = NSSelectorFromString(@"loadSpecifiersFromPlistName:target:");
+    if (![controller respondsToSelector:selector]) {
+        NSLog(@"[MobileMeadow] MMSafeLoadSpecifiers: controller does not respond to loadSpecifiersFromPlistName:target:");
+        return nil;
+    }
+
+    @try {
+        // 使用 objc_msgSend 调用 loadSpecifiersFromPlistName:target:
+        // 方法签名: - (NSMutableArray *)loadSpecifiersFromPlistName:(NSString *)name target:(id)target
+        NSMutableArray *(*msgSend)(id, SEL, NSString *, id) = (void *)objc_msgSend;
+        NSMutableArray *result = msgSend(controller, selector, plistName, controller);
+        return result;
+    } @catch (NSException *exception) {
+        NSLog(@"[MobileMeadow] MMSafeLoadSpecifiers: caught exception for plist '%@': %@", plistName, exception.reason);
+        return nil;
     }
 }

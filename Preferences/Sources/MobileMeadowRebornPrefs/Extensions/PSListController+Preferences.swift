@@ -63,4 +63,17 @@ extension PSListController {
     func safeSetSpecifiers(_ specifiers: NSMutableArray?) {
         MMSafeSetValueForKey(self, specifiers, "_specifiers")
     }
+
+    /// iOS 17 兼容：安全加载 specifiers
+    /// 使用 ObjC 异常安全包装器调用 loadSpecifiersFromPlistName:target:
+    /// 如果加载失败（异常或返回 nil），返回空数组防止无限重试
+    func safeLoadSpecifiers(fromPlistName name: String) -> NSMutableArray? {
+        let result = MMSafeLoadSpecifiers(self, name)
+        if let result = result {
+            return result
+        }
+        // 加载失败时返回空数组，防止系统反复调用导致无限循环
+        NSLog("[MobileMeadow] safeLoadSpecifiers: loading failed for '\(name)', returning empty array")
+        return NSMutableArray()
+    }
 }

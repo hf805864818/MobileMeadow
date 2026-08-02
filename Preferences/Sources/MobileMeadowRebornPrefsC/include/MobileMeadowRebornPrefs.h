@@ -19,3 +19,9 @@ void MMSafeSetValueForKey(id obj, id value, NSString *key);
 /// 检查对象是否为 UITableView 且响应 setTableHeaderView:，然后用 @try/@catch 包裹
 /// 返回 YES 表示设置成功，NO 表示失败
 BOOL MMSafeSetTableHeader(id tableView, UIView *headerView);
+
+/// iOS 17 兼容：ObjC 异常安全的 loadSpecifiers 调用
+/// PSListController 的 loadSpecifiersFromPlistName:target: 在 iOS 17 上可能抛出异常
+/// （plist 加载失败、cell 类找不到、框架内部变更等），Swift 无法捕获 ObjC 异常
+/// 此函数用 @try/@catch 包装，返回 specifiers 数组或 nil
+NSMutableArray *MMSafeLoadSpecifiers(id controller, NSString *plistName);
