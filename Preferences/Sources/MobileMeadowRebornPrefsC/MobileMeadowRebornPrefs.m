@@ -35,3 +35,28 @@ void MMSafeSetValueForKey(id obj, id value, NSString *key) {
         NSLog(@"[MobileMeadow] MMSafeSetValueForKey: caught exception for key '%@': %@", key, exception.reason);
     }
 }
+
+/// iOS 17 兼容：ObjC 异常安全的 tableHeaderView 设置
+/// 严格检查对象类型，确保只在 UITableView 上调用 setTableHeaderView:
+BOOL MMSafeSetTableHeader(id tableView, UIView *headerView) {
+    // 严格类型检查：确保对象确实是 UITableView 或其子类
+    if (!tableView || ![tableView isKindOfClass:[UITableView class]]) {
+        NSLog(@"[MobileMeadow] MMSafeSetTableHeader: object is not a UITableView (type: %@)", NSStringFromClass([tableView class]));
+        return NO;
+    }
+
+    // 检查对象是否响应 setTableHeaderView: 选择器
+    if (![tableView respondsToSelector:@selector(setTableHeaderView:)]) {
+        NSLog(@"[MobileMeadow] MMSafeSetTableHeader: UITableView does not respond to setTableHeaderView:");
+        return NO;
+    }
+
+    @try {
+        UITableView *tv = (UITableView *)tableView;
+        tv.tableHeaderView = headerView;
+        return YES;
+    } @catch (NSException *exception) {
+        NSLog(@"[MobileMeadow] MMSafeSetTableHeader: caught exception: %@", exception.reason);
+        return NO;
+    }
+}

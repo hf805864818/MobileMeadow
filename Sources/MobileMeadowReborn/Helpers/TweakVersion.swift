@@ -10,7 +10,8 @@ import Foundation
 
 struct TweakVersion {
     /// 当前插件版本号（由 CI 自动更新）
-    static let version: String = "1.0.14"
+    static let version: String = "1.0.15"
+    static let version: String = "1.0.15"
 
     /// 带前缀的版本号字符串，用于界面显示
     static var displayVersion: String {

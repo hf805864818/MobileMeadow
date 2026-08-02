@@ -24,31 +24,15 @@ class MobileMeadowMiscellanousVC: PSListController {
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        // iOS 17 兼容：使用安全方法设置 tableHeaderView
-        applyHeaderView()
+        // iOS 17 兼容：不在 viewDidLoad 中设置 headerView
     }
     
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        // 如果 viewDidLoad 中未能设置 header，在 viewDidAppear 中再次尝试
+        // 在 viewDidAppear 中设置 headerView
         if !headerApplied {
-            applyHeaderView()
-        }
-    }
-    
-    private func applyHeaderView() {
-        guard !headerApplied else { return }
-        if safeTableView() != nil {
-            setTableHeaderView(headerView)
+            mm_applyHeaderToTable(headerView)
             headerApplied = true
-        } else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-                guard let self = self, !self.headerApplied else { return }
-                if self.safeTableView() != nil {
-                    self.setTableHeaderView(self.headerView)
-                    self.headerApplied = true
-                }
-            }
         }
     }
     
