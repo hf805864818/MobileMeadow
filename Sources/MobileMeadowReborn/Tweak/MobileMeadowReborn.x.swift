@@ -69,8 +69,13 @@ struct MobileMeadowReborn: Tweak {
                 remLog("SBBirds hook group activated")
                 let sceneExtraHook: SBMailBoxBird = SBMailBoxBird(mailBoxBirdEnabled: tweakPrefs.mailBoxEnabled)
                 if sceneExtraHook.mailBoxBirdEnabled {
-                    sceneExtraHook.activate()
-                    remLog("SBMailBoxBird hook group activated")
+                    // iOS 17 兼容性检查：SBRootFolderController 在 iOS 17 中可能已变更
+                    if classExists("SBRootFolderController") {
+                        sceneExtraHook.activate()
+                        remLog("SBMailBoxBird hook group activated (SBRootFolderController found)")
+                    } else {
+                        remLog("⚠️ SBRootFolderController not found — mailbox hook skipped (iOS 17+ compatibility)")
+                    }
                     
                     // iOS 17 兼容性检查：NCNotificationShortLookViewController 在 iOS 17 中通知系统重构后可能不存在
                     // 仅当目标类存在时才激活通知 Hook，避免 tweak 加载时因找不到类而崩溃
@@ -162,31 +167,21 @@ class SBInterfaceHook: ClassHook<SpringBoard> {
 class SBDockHook: ClassHook<SBDockIconListView> {
     typealias Group = SBPlants
     @Property var dockGround: MMGroundContainerView?
-    @Property var hasAttemptedDockGround: Bool = false
     
     func didMoveToWindow() {
         orig.didMoveToWindow()
-        
-        // 不使用 DispatchQueue.once，改为异步延迟重试机制
-        // DispatchQueue.once 的致命缺陷：如果首次调用时 superview 为 nil，
-        // 它会永久阻止后续重试，导致植物永远不会出现
-        attemptCreateDockGround()
+        createDockGroundIfNeeded()
     }
     
     //orion:new
-    func attemptCreateDockGround() {
-        // 如果已经成功创建，不再重复
-        guard self.dockGround == nil else {
-            remLog("SBDockHook: dockGround already exists, skipping")
-            return
-        }
+    func createDockGroundIfNeeded() {
+        // 如果已创建则跳过
+        guard self.dockGround == nil else { return }
         
-        // 如果 superview 尚未就绪，延迟重试
+        // 如果 superview 尚未就绪，直接返回
+        // didMoveToWindow 会在视图层级变化时被系统多次调用，无需手动重试
         guard let superview = target.superview else {
-            remLog("SBDockHook: target.superview is nil, retrying in 0.5s...")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.attemptCreateDockGround()
-            }
+            remLog("SBDockHook: superview is nil, will retry on next didMoveToWindow")
             return
         }
         
