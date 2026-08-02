@@ -33,7 +33,19 @@ class MMAirLayerWindow: UIWindow {
         super.init(frame: frame)
     
         self.windowLevel = UIWindow.Level.alert - 1
-        self.windowScene = UIApplication.shared.windows.filter {$0.isKeyWindow}.first?.windowScene
+        
+        // iOS 17 兼容：使用 connectedScenes 替代已废弃的 UIApplication.shared.windows
+        if let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }) {
+            self.windowScene = scene
+        } else if let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first {
+            // 回退：使用第一个可用的 scene
+            self.windowScene = scene
+        }
+        
         self.rootViewController = MMAirLayerViewController.shared
         self.isHidden = false
     }

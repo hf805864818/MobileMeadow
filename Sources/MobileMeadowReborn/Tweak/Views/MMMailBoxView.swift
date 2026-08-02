@@ -32,11 +32,19 @@ class MMMailBoxView: UIView {
     enum MailBoxState {
         case empty, full
         
+        /// 安全获取邮箱图片，图片缺失时返回空 UIImage 而非崩溃
         fileprivate static func getMailBoxImage(for state: MailBoxState) -> UIImage {
+            let imageName: String
             switch state {
-            case .empty: return MMAssets.imageNamed("mailbox_empty")!.withHorizontallyFlippedOrientation()
-            case .full: return MMAssets.imageNamed("mailbox_full")!.withHorizontallyFlippedOrientation()
+            case .empty: imageName = "mailbox_empty"
+            case .full: imageName = "mailbox_full"
             }
+            // 使用安全加载，图片缺失时回退到空图片
+            guard let image = MMAssets.imageNamed(imageName) else {
+                remLog("⚠️ MailBox image '\(imageName)' not found, using placeholder")
+                return UIImage()
+            }
+            return image.withHorizontallyFlippedOrientation()
         }
     }
     
@@ -50,7 +58,12 @@ class MMMailBoxView: UIView {
     }()
     
     private let mailBoxBirdImageView: UIImageView = {
-        let imageView = UIImageView(image: MMAssets.imageNamed("deliverybird_ground")!.withHorizontallyFlippedOrientation())
+        // 安全加载 deliverybird_ground 图片，缺失时使用空图片
+        let birdImage = MMAssets.imageNamed("deliverybird_ground")?.withHorizontallyFlippedOrientation() ?? UIImage()
+        if MMAssets.imageNamed("deliverybird_ground") == nil {
+            remLog("⚠️ deliverybird_ground image not found, using placeholder")
+        }
+        let imageView = UIImageView(image: birdImage)
         imageView.contentMode = .scaleAspectFit
         imageView.translatesAutoresizingMaskIntoConstraints = false
         return imageView

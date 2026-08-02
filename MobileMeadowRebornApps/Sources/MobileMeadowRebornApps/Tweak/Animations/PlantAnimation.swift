@@ -35,14 +35,14 @@ struct PlantAnimation {
             var isLeftToRight: Bool = (arc4random_uniform(2) != 0)
             
             animation = { [weak imageView] finished in
-                guard let weakImageView = imageView else { return }
+                guard let weakImageView = imageView, let image = weakImageView.image else { return }
                 isLeftToRight.toggle()
                 if (finished) {
                     UIView.animate(withDuration: 1.5 + CGFloat(arc4random_uniform(400) / 100), delay: 0.0, options: [.curveEaseInOut], animations: {
                         var transform: CGAffineTransform = CGAffineTransform.identity
-                        transform = CGAffineTransformTranslate(transform, 0.0, weakImageView.image!.size.height)
+                        transform = CGAffineTransformTranslate(transform, 0.0, image.size.height)
                         transform = CGAffineTransformRotate(transform, (isLeftToRight ? -20.0 : 20.0) * .pi / 180)
-                        transform = CGAffineTransformTranslate(transform, 0.0, -weakImageView.image!.size.height)
+                        transform = CGAffineTransformTranslate(transform, 0.0, -image.size.height)
                         weakImageView.transform = transform
                     }, completion: animation)
                 }
@@ -52,15 +52,15 @@ struct PlantAnimation {
             var isCentered: Bool = (arc4random_uniform(2) != 0)
             
             animation = { [weak imageView] finished in
-                guard let weakImageView = imageView else { return }
+                guard let weakImageView = imageView, let image = weakImageView.image else { return }
                 let angle: CGFloat = animationStyle == .windFromLeftStyle ? (isCentered ? 10.0 : 25.0) : (isCentered ? -10.0 : -25.0)
                 isCentered.toggle()
                 if (finished) {
                     UIView.animate(withDuration: 1.5 + CGFloat(arc4random_uniform(200) / 100), delay: 0.0, options: [.curveEaseInOut], animations: {
                         var transform: CGAffineTransform = CGAffineTransform.identity
-                        transform = CGAffineTransformTranslate(transform, 0.0, weakImageView.image!.size.height)
+                        transform = CGAffineTransformTranslate(transform, 0.0, image.size.height)
                         transform = CGAffineTransformRotate(transform, angle * .pi / 180)
-                        transform = CGAffineTransformTranslate(transform, 0.0, -weakImageView.image!.size.height)
+                        transform = CGAffineTransformTranslate(transform, 0.0, -image.size.height)
                         weakImageView.transform = transform
                     }, completion: animation)
                 }

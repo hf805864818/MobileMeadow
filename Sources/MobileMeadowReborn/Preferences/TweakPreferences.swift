@@ -44,7 +44,7 @@ class TweakPreferences {
     
     func updatePreferences(atPath path: String) {
         guard let plistData: NSDictionary = NSDictionary(contentsOfFile: path) else { return }
-        let plistKeys: [String] = plistData.allKeys as! [String]
+        let plistKeys: [String] = plistData.allKeys.compactMap { $0 as? String }
         let settingsData = SettingsModel().toDictionary()
         
         for i in settingsData {

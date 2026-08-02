@@ -52,6 +52,20 @@ NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
 echo "New version: $NEW_VERSION"
 
 # ---- 更新 control 文件 ----
+# 先移除可能存在的重复 Version 行（只保留第一次出现的）
+CONTROL_TMP="${CONTROL_FILE}.tmp"
+awk '
+    /^Version:/ {
+        if (!seen_version) {
+            print
+            seen_version = 1
+        }
+        next
+    }
+    { print }
+' "$CONTROL_FILE" > "$CONTROL_TMP"
+mv "$CONTROL_TMP" "$CONTROL_FILE"
+
 if [[ "$(uname)" == "Darwin" ]]; then
     sed -i '' "s/^Version: .*/Version: ${NEW_VERSION}/" "$CONTROL_FILE"
 else
@@ -60,24 +74,38 @@ fi
 echo "✓ Updated control file: Version: ${NEW_VERSION}"
 
 # ---- 更新 TweakVersion.swift (主 Tweak) ----
-if [ -f "$TWEAK_VERSION_FILE" ]; then
-    if [[ "$(uname)" == "Darwin" ]]; then
-        sed -i '' "s/static let version: String = \".*\"/static let version: String = \"${NEW_VERSION}\"/" "$TWEAK_VERSION_FILE"
-    else
-        sed -i "s/static let version: String = \".*\"/static let version: String = \"${NEW_VERSION}\"/" "$TWEAK_VERSION_FILE"
+update_version_file() {
+    local file="$1"
+    if [ ! -f "$file" ]; then
+        return
     fi
-    echo "✓ Updated $TWEAK_VERSION_FILE"
-fi
 
-# ---- 更新 TweakVersion.swift (Preferences) ----
-if [ -f "$PREFS_VERSION_FILE" ]; then
+    # 先移除可能存在的重复 version 行（只保留第一次出现的）
+    # 使用 awk 只保留第一个匹配行，其他行删除
+    local tmp_file="${file}.tmp"
+    awk '
+        /static let version: String =/ {
+            if (!seen_version) {
+                print
+                seen_version = 1
+            }
+            next
+        }
+        { print }
+    ' "$file" > "$tmp_file"
+    mv "$tmp_file" "$file"
+
+    # 然后用 sed 替换版本号
     if [[ "$(uname)" == "Darwin" ]]; then
-        sed -i '' "s/static let version: String = \".*\"/static let version: String = \"${NEW_VERSION}\"/" "$PREFS_VERSION_FILE"
+        sed -i '' "s/static let version: String = \".*\"/static let version: String = \"${NEW_VERSION}\"/" "$file"
     else
-        sed -i "s/static let version: String = \".*\"/static let version: String = \"${NEW_VERSION}\"/" "$PREFS_VERSION_FILE"
+        sed -i "s/static let version: String = \".*\"/static let version: String = \"${NEW_VERSION}\"/" "$file"
     fi
-    echo "✓ Updated $PREFS_VERSION_FILE"
-fi
+    echo "✓ Updated $file"
+}
+
+update_version_file "$TWEAK_VERSION_FILE"
+update_version_file "$PREFS_VERSION_FILE"
 
 # ---- 更新 Root.plist 中的页脚版本号 ----
 if [ -f "$ROOT_PLIST" ]; then
