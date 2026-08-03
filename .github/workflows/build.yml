@@ -23,21 +23,31 @@ jobs:
           brew install ldid dpkg make 2>/dev/null || true
           which dpkg-deb || brew install dpkg 2>/dev/null || true
 
-      - name: Setup Theos
+      # ============================================================
+      # 安装标准 Theos（用于 rootless 编译）
+      # ============================================================
+      - name: Setup Theos (standard)
         run: |
           git clone --recursive https://github.com/theos/theos.git "$HOME/theos"
           echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
           echo "$HOME/theos/bin" >> "$GITHUB_PATH"
 
+      # ============================================================
+      # 安装 Roothide Theos（用于 roothide 编译）
+      #RELAXIN 越狱使用 RootHide 引导程序，需要专用 Theos
+      # ============================================================
+      - name: Setup Theos (roothide)
+        run: |
+          git clone --recursive https://github.com/roothide/theos.git "$HOME/theos-roothide"
+          echo "THEOS_ROOTHIDE=$HOME/theos-roothide" >> "$GITHUB_ENV"
+
       - name: Create private framework stubs
         run: |
-          THEOS="$HOME/theos"
-          VENDOR_LIB="$THEOS/vendor/lib"
-          mkdir -p "$VENDOR_LIB"
           create_tbd() {
-            local framework_name="$1"
+            local theos_path="$1"
+            local framework_name="$2"
             local install_name="/System/Library/PrivateFrameworks/${framework_name}.framework/${framework_name}"
-            local framework_dir="$VENDOR_LIB/${framework_name}.framework"
+            local framework_dir="${theos_path}/vendor/lib/${framework_name}.framework"
             mkdir -p "$framework_dir"
             cat > "$framework_dir/${framework_name}.tbd" << EOF
           --- !tapi-tbd
@@ -51,13 +61,13 @@ jobs:
           EOF
             echo "Created stub: $framework_dir/${framework_name}.tbd"
           }
-          create_tbd "SpringBoard"
-          create_tbd "BulletinBoard"
-          create_tbd "Preferences"
-          create_tbd "FrontBoard"
-          create_tbd "BackBoardServices"
-          create_tbd "AppSupport"
-          echo "=== Private framework stubs created ==="
+
+          for theos_path in "$HOME/theos" "$HOME/theos-roothide"; do
+            echo "=== Creating stubs in $theos_path ==="
+            for fw in SpringBoard BulletinBoard Preferences FrontBoard BackBoardServices AppSupport; do
+              create_tbd "$theos_path" "$fw"
+            done
+          done
 
       - name: Select Xcode
         run: |
@@ -75,77 +85,94 @@ jobs:
           echo "Build version: ${CURRENT_VERSION}"
 
       # ============================================================
-      # 核心修复：使用 Theos 原生多架构编译，不再手动构建 fat binary
-      #
-      # 之前的方案有致命 bug：
-      # 1. 手动 find .theos/obj 会匹配到 dSYM 调试符号文件
-      # 2. dSYM 文件被当作真正的二进制替换进了 deb
-      # 3. 导致 MobileMeadowRebornApps.dylib 和 MobileMeadowRebornPrefs
-      #    实际上是 dSYM 文件，不是可执行代码
-      # 4. 这就是 ldid: Unsupported Mach-O type 的根本原因
-      #
-      # 新方案：让 Theos 自己处理多架构编译和打包
-      # Makefile 中已设置 export ARCHS = arm64 arm64e
+      # 编译函数：支持 rootless 和 roothide 两种模式
       # ============================================================
-      - name: Build with Theos native multi-arch
+      # Makefile 中 ARCHS = arm64 arm64e
+      # Swift 代码通过 SPM 编译为 arm64（Swift 不支持 arm64e 目标）
+      # C/ObjC 代码通过 clang 编译为 arm64 + arm64e
+      # Theos 自动 lipo 合并为 fat binary
+      #
+      # 最终 deb 包含 arm64+arm64e 双架构 fat binary
+      # ============================================================
+
+      # ============================================================
+      # 编译 1：Rootless 版本（Dopamine / palera1n rootless）
+      # ============================================================
+      - name: Build Rootless (arm64 + arm64e)
         run: |
           export THEOS="$HOME/theos"
           export THEOS_FAKEROOT=""
-          PROJECT_DIR="$PWD"
 
-          # 清理
           make clean 2>/dev/null || true
-          rm -rf .build/ Preferences/.build/ MobileMeadowRebornApps/.build/ 2>/dev/null || true
-          rm -rf .theos/ Preferences/.theos/ MobileMeadowRebornApps/.theos/ 2>/dev/null || true
+          rm -rf .build/ Preferences/.build/ MobileMeadowRebornApps/.build/ MobileMeadowStandalone/.build/ 2>/dev/null || true
+          rm -rf .theos/ Preferences/.theos/ MobileMeadowRebornApps/.theos/ MobileMeadowStandalone/.theos/ 2>/dev/null || true
 
-          # SPM 编译（arm64，Swift 不支持 arm64e 目标）
-          echo "=== Step 1: make spm ==="
+          echo "=== Rootless: make spm ==="
           make spm 2>&1
-          echo "=== spm_config ==="
-          cat .theos/spm_config 2>/dev/null || echo "no spm_config"
 
-          # Theos 原生多架构编译
-          # Makefile 中 ARCHS = arm64 arm64e
-          # Theos 会：
-          #   1. 用 arm64 SPM 产物
-          #   2. 用 clang 编译 C/ObjC 为 arm64 和 arm64e
-          #   3. 链接 arm64 SPM + arm64 C/ObjC → arm64 slice
-          #   4. 链接 arm64 SPM + arm64e C/ObjC → arm64e slice
-          #   5. lipo 合并为 fat binary
-          echo "=== Step 2: make all (multi-arch) ==="
+          echo "=== Rootless: make all (multi-arch) ==="
           make all 2>&1
 
-          # 打包
-          echo "=== Step 3: make package ==="
+          echo "=== Rootless: make package ==="
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless 2>&1
 
-          # 验证构建产物
-          echo "=== 构建产物 ==="
-          ls -la packages/ 2>/dev/null || echo "no packages/"
-          ls -la .theos/obj/ 2>/dev/null || echo "no .theos/obj/"
+          # 重命名以区分
+          for deb in packages/*.deb; do
+            newname=$(echo "$deb" | sed 's/\.deb/_rootless.deb/')
+            mv "$deb" "$newname"
+            echo "Created: $newname"
+          done
 
-          # 验证 .theos/obj 中的二进制架构
-          echo "=== .theos/obj 中的二进制架构 ==="
-          find . -path "*/.theos/obj/*" -type f | while read f; do
-            if file "$f" | grep -q "Mach-O"; then
-              macho_type=$(file "$f" | grep -o 'Mach-O [^,]*')
-              # 排除 dSYM 文件
-              if echo "$macho_type" | grep -q "dSYM"; then
-                echo "  [DSYM - 跳过] $f"
-              else
-                echo "  [BINARY] $f: $macho_type"
-                lipo -info "$f" 2>/dev/null || echo "    (非 fat binary)"
-              fi
-            fi
+          # 验证架构
+          echo "=== Rootless 构建产物架构 ==="
+          find . -path "*/.theos/obj/*.dylib" -type f | while read f; do
+            echo "  $f:"
+            lipo -info "$f" 2>/dev/null || file "$f"
           done
 
       # ============================================================
-      # 验证最终 deb 中的二进制文件
-      # 关键检查：
-      # 1. 二进制必须是真正的 Mach-O 可执行文件，不是 dSYM
-      # 2. 检查是否包含 arm64e 架构
+      # 编译 2：Roothide 版本（RELAXIN / RootHide Bootstrap）
+      #RELAXIN 越狱专用
       # ============================================================
-      - name: Verify deb contents
+      - name: Build Roothide (arm64 + arm64e)
+        run: |
+          export THEOS="$HOME/theos-roothide"
+          export THEOS_FAKEROOT=""
+
+          make clean 2>/dev/null || true
+          rm -rf .build/ Preferences/.build/ MobileMeadowRebornApps/.build/ MobileMeadowStandalone/.build/ 2>/dev/null || true
+          rm -rf .theos/ Preferences/.theos/ MobileMeadowRebornApps/.theos/ MobileMeadowStandalone/.theos/ 2>/dev/null || true
+
+          echo "=== Roothide: make spm ==="
+          make spm 2>&1
+
+          echo "=== Roothide: make all (multi-arch) ==="
+          make all 2>&1
+
+          echo "=== Roothide: make package ==="
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide 2>&1
+
+          # 重命名以区分
+          for deb in packages/*.deb; do
+            if echo "$deb" | grep -q "rootless"; then
+              continue
+            fi
+            newname=$(echo "$deb" | sed 's/\.deb/_roothide.deb/')
+            mv "$deb" "$newname"
+            echo "Created: $newname"
+          done
+
+          # 验证架构
+          echo "=== Roothide 构建产物架构 ==="
+          find . -path "*/.theos/obj/*.dylib" -type f | while read f; do
+            echo "  $f:"
+            lipo -info "$f" 2>/dev/null || file "$f"
+          done
+
+      # ============================================================
+      # 验证所有 deb 的架构
+      # ============================================================
+      - name: Verify all deb contents
         run: |
           echo "=== 最终 deb 架构验证 ==="
           for deb in packages/*.deb; do
@@ -154,13 +181,11 @@ jobs:
             TMPDIR=$(mktemp -d)
             dpkg-deb -R "$deb" "$TMPDIR/root" 2>/dev/null
 
-            ALL_OK=true
             find "$TMPDIR/root" -type f -not -path "$TMPDIR/root/DEBIAN/*" | while read f; do
               if file "$f" | grep -q "Mach-O"; then
                 macho_type=$(file "$f" | grep -o 'Mach-O [^,]*')
                 if echo "$macho_type" | grep -q "dSYM"; then
-                  echo "  [错误] $f 是 dSYM 文件，不是可执行代码！"
-                  ALL_OK=false
+                  echo "  [错误] $f 是 dSYM 文件！"
                 else
                   echo "  [OK] $f"
                   arch_info=$(lipo -info "$f" 2>/dev/null || file "$f" | grep -o 'arm64[^ ]*')
@@ -171,8 +196,9 @@ jobs:
 
             rm -rf "$TMPDIR"
           done
-
           echo "=== 验证完成 ==="
+          echo "=== packages 目录 ==="
+          ls -la packages/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -190,15 +216,33 @@ jobs:
             ## MobileMeadow Reborn v${{ steps.version.outputs.current_version }}
 
             ### 自动构建
-            - 由 GitHub Actions 自动编译
             - iOS 15-17 兼容
             - arm64 + arm64e 双架构支持
-            - Rootless jailbreak 支持
+
+            ### 两个版本
+
+            | 文件 | 适用越狱 | 说明 |
+            |------|---------|------|
+            | `*_rootless.deb` | Dopamine, palera1n rootless | 标准 rootless 越狱 |
+            | `*_roothide.deb` | RELAXIN, RootHide Bootstrap |RELAXIN 越狱专用 |
 
             ### 安装方法
-            1. 下载 .deb 文件
+
+            **Rootless 版本（Dopamine 等）：**
+            1. 下载 `*_rootless.deb`
             2. 通过 Sileo 或 Filza 安装
             3. Respring 后生效
+
+            **Roothide 版本（RELAXIN）：**
+            1. 下载 `*_roothide.deb`
+            2. 用 Roothide Patcher 转换（如果需要）
+            3. 通过 Sileo 安装
+            4. Respring 后生效
+
+            ### iOS 17 注意事项
+            - Dock 植物（花草）：已通过 SBDockView Hook 修复 iOS 17 兼容性
+            - 飞鸟：已通过 UIWindowScene 方式适配 iOS 17
+            - 如 SpringBoard 注入不生效，可尝试 MobileMeadowStandalone 独立 App
           files: packages/*.deb
           prerelease: false
         env:
