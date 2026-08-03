@@ -45,7 +45,8 @@ let theosPath = conf.theos
 let sdk = conf.sdk
 let resourceDir = conf.swiftResourceDir
 let deploymentTarget = conf.deploymentTarget
-let arch = conf[key: "arch", or: ProcessInfo.processInfo.environment["THEOS_CURRENT_ARCH"] ?? "arm64"]
+// 关键修复：优先使用 THEOS_CURRENT_ARCH 环境变量，而不是 spm_config 中的 arch
+let arch = ProcessInfo.processInfo.environment["THEOS_CURRENT_ARCH"] ?? conf[key: "arch", or: "arm64"]
 let triple = "\(arch)-apple-ios\(deploymentTarget)"
 
 let libFlags: [String] = [
