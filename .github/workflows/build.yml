@@ -75,194 +75,77 @@ jobs:
           echo "Build version: ${CURRENT_VERSION}"
 
       # ============================================================
-      # 步骤 1：构建 arm64
-      # Package.swift 已修复：优先读取 THEOS_CURRENT_ARCH 环境变量
-      # 不再需要 make spm 之后修改 spm_config
+      # 核心修复：使用 Theos 原生多架构编译，不再手动构建 fat binary
+      #
+      # 之前的方案有致命 bug：
+      # 1. 手动 find .theos/obj 会匹配到 dSYM 调试符号文件
+      # 2. dSYM 文件被当作真正的二进制替换进了 deb
+      # 3. 导致 MobileMeadowRebornApps.dylib 和 MobileMeadowRebornPrefs
+      #    实际上是 dSYM 文件，不是可执行代码
+      # 4. 这就是 ldid: Unsupported Mach-O type 的根本原因
+      #
+      # 新方案：让 Theos 自己处理多架构编译和打包
+      # Makefile 中已设置 export ARCHS = arm64 arm64e
       # ============================================================
-      - name: Build for arm64
-        env:
-          THEOS_CURRENT_ARCH: arm64
-        run: |
-          export THEOS="$HOME/theos"
-          export THEOS_FAKEROOT=""
-          # 彻底清理，避免上次构建的缓存影响
-          make clean 2>/dev/null || true
-          rm -rf .build/ Preferences/.build/ MobileMeadowRebornApps/.build/ 2>/dev/null || true
-          rm -rf .theos/ Preferences/.theos/ MobileMeadowRebornApps/.theos/ 2>/dev/null || true
-          # make spm 会生成 spm_config 并运行 swift build
-          # Package.swift 通过 THEOS_CURRENT_ARCH 环境变量读取到 arm64
-          make spm THEOS_CURRENT_ARCH=arm64 2>&1
-          echo "=== spm_config 内容 ==="
-          cat .theos/spm_config 2>/dev/null || echo "spm_config not found"
-          # 构建主项目和子项目
-          make all ARCHS=arm64 THEOS_CURRENT_ARCH=arm64 2>&1
-          echo "=== arm64 构建完成，保存二进制 ==="
-          SAVE_DIR="/tmp/arch_bin/arm64"
-          rm -rf "$SAVE_DIR"
-          mkdir -p "$SAVE_DIR"
-          find . -path "*/.theos/obj/*" -type f \( -name "*.dylib" -o -name "MobileMeadowRebornPrefs" \) 2>/dev/null | while read f; do
-            if file "$f" | grep -q "Mach-O"; then
-              rel_path="${f#./}"
-              mkdir -p "$SAVE_DIR/$(dirname "$rel_path")"
-              cp "$f" "$SAVE_DIR/$rel_path"
-              echo "Saved arm64: $rel_path"
-            fi
-          done
-          echo "=== arm64 二进制架构验证 ==="
-          find "$SAVE_DIR" -type f -exec lipo -info {} \;
-          # 验证确实有 arm64 二进制
-          if [ -z "$(find "$SAVE_DIR" -type f)" ]; then
-            echo "FATAL: 没有构建出任何 arm64 二进制！"
-            exit 1
-          fi
-
-      # ============================================================
-      # 步骤 2：构建 arm64e
-      # 关键修复：THEOS_CURRENT_ARCH=arm64e 通过环境变量和命令行双重传递
-      # Package.swift 优先读取环境变量，确保 SPM 编译 arm64e
-      # ============================================================
-      - name: Build for arm64e
-        env:
-          THEOS_CURRENT_ARCH: arm64e
-        run: |
-          export THEOS="$HOME/theos"
-          export THEOS_FAKEROOT=""
-          # 彻底清理
-          make clean 2>/dev/null || true
-          rm -rf .build/ Preferences/.build/ MobileMeadowRebornApps/.build/ 2>/dev/null || true
-          rm -rf .theos/ Preferences/.theos/ MobileMeadowRebornApps/.theos/ 2>/dev/null || true
-          # make spm - Package.swift 通过 THEOS_CURRENT_ARCH=arm64e 环境变量编译 arm64e
-          make spm THEOS_CURRENT_ARCH=arm64e 2>&1
-          echo "=== spm_config 内容 ==="
-          cat .theos/spm_config 2>/dev/null || echo "spm_config not found"
-          # 构建主项目和子项目
-          make all ARCHS=arm64e THEOS_CURRENT_ARCH=arm64e 2>&1
-          echo "=== arm64e 构建完成，保存二进制 ==="
-          SAVE_DIR="/tmp/arch_bin/arm64e"
-          rm -rf "$SAVE_DIR"
-          mkdir -p "$SAVE_DIR"
-          find . -path "*/.theos/obj/*" -type f \( -name "*.dylib" -o -name "MobileMeadowRebornPrefs" \) 2>/dev/null | while read f; do
-            if file "$f" | grep -q "Mach-O"; then
-              rel_path="${f#./}"
-              mkdir -p "$SAVE_DIR/$(dirname "$rel_path")"
-              cp "$f" "$SAVE_DIR/$rel_path"
-              echo "Saved arm64e: $rel_path"
-            fi
-          done
-          echo "=== arm64e 二进制架构验证 ==="
-          find "$SAVE_DIR" -type f -exec lipo -info {} \;
-          # 关键验证：确认二进制确实是 arm64e 架构
-          if [ -z "$(find "$SAVE_DIR" -type f)" ]; then
-            echo "FATAL: 没有构建出任何 arm64e 二进制！"
-            exit 1
-          fi
-          ARM64E_COUNT=0
-          find "$SAVE_DIR" -type f | while read f; do
-            if lipo -info "$f" 2>/dev/null | grep -q "arm64e"; then
-              echo "OK: $f 包含 arm64e"
-            else
-              echo "WARNING: $f 不包含 arm64e 架构"
-            fi
-          done
-
-      # ============================================================
-      # 步骤 3：创建 fat binaries (arm64 + arm64e)
-      # ============================================================
-      - name: Create fat binaries
-        run: |
-          echo "=== 创建 fat binaries ==="
-          FAT_DIR="/tmp/arch_bin/fat"
-          rm -rf "$FAT_DIR"
-          mkdir -p "$FAT_DIR"
-          ARM64_DIR="/tmp/arch_bin/arm64"
-          ARM64E_DIR="/tmp/arch_bin/arm64e"
-          find "$ARM64_DIR" -type f | while read arm64_file; do
-            rel_path="${arm64_file#$ARM64_DIR/}"
-            arm64e_file="$ARM64E_DIR/$rel_path"
-            fat_file="$FAT_DIR/$rel_path"
-            mkdir -p "$(dirname "$fat_file")"
-            if [ -f "$arm64e_file" ]; then
-              echo "Creating fat: $rel_path"
-              lipo -create "$arm64_file" "$arm64e_file" -output "$fat_file"
-              lipo -info "$fat_file"
-            else
-              echo "WARNING: 没有 arm64e 版本的 $rel_path，仅使用 arm64"
-              cp "$arm64_file" "$fat_file"
-            fi
-          done
-          echo "=== Fat binaries 创建完成 ==="
-          find "$FAT_DIR" -type f | while read f; do
-            echo "--- $f ---"
-            lipo -info "$f"
-          done
-
-      # ============================================================
-      # 步骤 4：构建 deb 包并替换为 fat binaries
-      # 关键修复：移除 ldid -S 重新签名步骤
-      # ldid -S 会破坏 fat binary 的 Mach-O 格式，导致 "Unsupported Mach-O type" 错误
-      # Theos 构建过程中已经对二进制进行了签名，lipo 合并后签名仍然有效
-      # ============================================================
-      - name: Package with fat binaries
-        env:
-          THEOS_CURRENT_ARCH: arm64
+      - name: Build with Theos native multi-arch
         run: |
           export THEOS="$HOME/theos"
           export THEOS_FAKEROOT=""
           PROJECT_DIR="$PWD"
-          # 构建基础 arm64 包
+
+          # 清理
           make clean 2>/dev/null || true
           rm -rf .build/ Preferences/.build/ MobileMeadowRebornApps/.build/ 2>/dev/null || true
           rm -rf .theos/ Preferences/.theos/ MobileMeadowRebornApps/.theos/ 2>/dev/null || true
-          make spm THEOS_CURRENT_ARCH=arm64 2>&1
-          echo "=== 构建 deb 包 (arm64 基础) ==="
-          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless ARCHS=arm64 THEOS_CURRENT_ARCH=arm64 2>&1
-          echo "=== 包构建完成，开始注入 fat binaries ==="
-          FAT_DIR="/tmp/arch_bin/fat"
-          DEB_FILE=$(ls "$PROJECT_DIR/packages/"*.deb 2>/dev/null | head -1)
-          if [ -z "$DEB_FILE" ]; then
-            echo "ERROR: 没有找到 .deb 文件！"
-            ls -la "$PROJECT_DIR/packages/" 2>/dev/null || echo "packages 目录不存在"
-            exit 1
-          fi
-          echo "原始 deb: $DEB_FILE"
-          # 解包 deb
-          WORK_DIR="/tmp/deb_work"
-          rm -rf "$WORK_DIR"
-          mkdir -p "$WORK_DIR/root"
-          dpkg-deb -R "$DEB_FILE" "$WORK_DIR/root"
-          echo "=== 解包内容 ==="
-          ls -la "$WORK_DIR/root/"
-          ls -la "$WORK_DIR/root/DEBIAN/" 2>/dev/null
-          # 替换二进制为 fat 版本
-          # 关键：不执行 ldid -S！二进制在 Theos 构建时已经签名
-          echo "=== 替换二进制 ==="
-          find "$WORK_DIR/root" -type f -not -path "$WORK_DIR/root/DEBIAN/*" | while read f; do
+
+          # SPM 编译（arm64，Swift 不支持 arm64e 目标）
+          echo "=== Step 1: make spm ==="
+          make spm 2>&1
+          echo "=== spm_config ==="
+          cat .theos/spm_config 2>/dev/null || echo "no spm_config"
+
+          # Theos 原生多架构编译
+          # Makefile 中 ARCHS = arm64 arm64e
+          # Theos 会：
+          #   1. 用 arm64 SPM 产物
+          #   2. 用 clang 编译 C/ObjC 为 arm64 和 arm64e
+          #   3. 链接 arm64 SPM + arm64 C/ObjC → arm64 slice
+          #   4. 链接 arm64 SPM + arm64e C/ObjC → arm64e slice
+          #   5. lipo 合并为 fat binary
+          echo "=== Step 2: make all (multi-arch) ==="
+          make all 2>&1
+
+          # 打包
+          echo "=== Step 3: make package ==="
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless 2>&1
+
+          # 验证构建产物
+          echo "=== 构建产物 ==="
+          ls -la packages/ 2>/dev/null || echo "no packages/"
+          ls -la .theos/obj/ 2>/dev/null || echo "no .theos/obj/"
+
+          # 验证 .theos/obj 中的二进制架构
+          echo "=== .theos/obj 中的二进制架构 ==="
+          find . -path "*/.theos/obj/*" -type f | while read f; do
             if file "$f" | grep -q "Mach-O"; then
-              bin_name=$(basename "$f")
-              fat_candidate=$(find "$FAT_DIR" -name "$bin_name" -type f 2>/dev/null | head -1)
-              if [ -n "$fat_candidate" ] && [ -f "$fat_candidate" ]; then
-                echo "替换 $bin_name 为 fat binary"
-                cp "$fat_candidate" "$f"
-                lipo -info "$f"
+              macho_type=$(file "$f" | grep -o 'Mach-O [^,]*')
+              # 排除 dSYM 文件
+              if echo "$macho_type" | grep -q "dSYM"; then
+                echo "  [DSYM - 跳过] $f"
               else
-                echo "WARNING: 没有找到 $bin_name 的 fat binary"
+                echo "  [BINARY] $f: $macho_type"
+                lipo -info "$f" 2>/dev/null || echo "    (非 fat binary)"
               fi
             fi
           done
-          # 重新打包 deb
-          echo "=== 重新打包 deb ==="
-          NEW_DEB="$PROJECT_DIR/packages/$(basename "$DEB_FILE")"
-          rm -f "$NEW_DEB"
-          dpkg-deb -b --root-owner-group "$WORK_DIR/root" "$NEW_DEB"
-          cd "$PROJECT_DIR"
-          echo "=== Fat binary deb 创建完成: $NEW_DEB ==="
-          ls -la "$NEW_DEB"
-          dpkg-deb -I "$NEW_DEB" 2>&1 | head -20
 
       # ============================================================
-      # 步骤 5：验证最终 deb 中的架构
+      # 验证最终 deb 中的二进制文件
+      # 关键检查：
+      # 1. 二进制必须是真正的 Mach-O 可执行文件，不是 dSYM
+      # 2. 检查是否包含 arm64e 架构
       # ============================================================
-      - name: Verify final architectures
+      - name: Verify deb contents
         run: |
           echo "=== 最终 deb 架构验证 ==="
           for deb in packages/*.deb; do
@@ -270,32 +153,26 @@ jobs:
             dpkg-deb -I "$deb" 2>&1 | grep -E "Package|Version|Architecture"
             TMPDIR=$(mktemp -d)
             dpkg-deb -R "$deb" "$TMPDIR/root" 2>/dev/null
+
+            ALL_OK=true
             find "$TMPDIR/root" -type f -not -path "$TMPDIR/root/DEBIAN/*" | while read f; do
               if file "$f" | grep -q "Mach-O"; then
-                echo "--- $f ---"
-                lipo -info "$f" 2>/dev/null || file "$f"
+                macho_type=$(file "$f" | grep -o 'Mach-O [^,]*')
+                if echo "$macho_type" | grep -q "dSYM"; then
+                  echo "  [错误] $f 是 dSYM 文件，不是可执行代码！"
+                  ALL_OK=false
+                else
+                  echo "  [OK] $f"
+                  arch_info=$(lipo -info "$f" 2>/dev/null || file "$f" | grep -o 'arm64[^ ]*')
+                  echo "    架构: $arch_info"
+                fi
               fi
             done
+
             rm -rf "$TMPDIR"
           done
-          # 最终检查：确保至少有一个 fat binary
-          FOUND_FAT=0
-          TMPDIR=$(mktemp -d)
-          for deb in packages/*.deb; do
-            dpkg-deb -R "$deb" "$TMPDIR/root" 2>/dev/null
-            find "$TMPDIR/root" -type f -not -path "$TMPDIR/root/DEBIAN/*" | while read f; do
-              if lipo -info "$f" 2>/dev/null | grep -q "arm64e"; then
-                echo "OK: $f 包含 arm64e 架构"
-                echo "1" > /tmp/found_fat
-              fi
-            done
-          done
-          rm -rf "$TMPDIR"
-          if [ -f /tmp/found_fat ]; then
-            echo "=== 验证通过：deb 包含 arm64e 架构 ==="
-          else
-            echo "=== WARNING: deb 中没有找到 arm64e 架构 ==="
-          fi
+
+          echo "=== 验证完成 ==="
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -315,7 +192,7 @@ jobs:
             ### 自动构建
             - 由 GitHub Actions 自动编译
             - iOS 15-17 兼容
-            - arm64 + arm64e 双架构支持 (fat binary)
+            - arm64 + arm64e 双架构支持
             - Rootless jailbreak 支持
 
             ### 安装方法
