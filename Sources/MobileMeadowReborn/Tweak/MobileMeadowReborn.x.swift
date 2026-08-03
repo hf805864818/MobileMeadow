@@ -95,6 +95,8 @@ func setupBirdOverlayIfNeeded() {
 
 //MARK: - Hook Groups
 struct SBPlants: HookGroup { let plantsEnabled: Bool }
+struct SBPlantsDock_iOS17: HookGroup { let plantsEnabled: Bool }
+struct SBPlantsVisual: HookGroup { let plantsEnabled: Bool }
 struct SBBirds: HookGroup { let birdsEnabled: Bool }
 struct SBMailBoxBird: HookGroup { let mailBoxBirdEnabled: Bool }
 /// 独立的通知 Hook 组 —— 仅在 NCNotificationShortLookViewController 类存在时激活
@@ -108,18 +110,30 @@ struct MobileMeadowReborn: Tweak {
         tweakPrefs = TweakPreferences.preferences.loadPreferences()
         remLog("Prefs: enabled=\(tweakPrefs.isTweakEnabled), plants=\(tweakPrefs.plantsEnabled), birds=\(tweakPrefs.birdsEnabled), mailbox=\(tweakPrefs.mailBoxEnabled)")
 
-        let dockHook: SBPlants = SBPlants(plantsEnabled: tweakPrefs.plantsEnabled)
         let sceneHook: SBBirds = SBBirds(birdsEnabled: tweakPrefs.birdsEnabled)
 
         switch tweakPrefs.isTweakEnabled {
         case true:
             remLog("Tweak is Enabled! :)")
-            if dockHook.plantsEnabled {
+            if tweakPrefs.plantsEnabled {
+                // iOS 17: 重构植物 Hook 策略，支持多版本兼容
+                // 始终激活视觉 Hook（MTMaterialView + SBIconListPageControl）
+                let visualHook: SBPlantsVisual = SBPlantsVisual(plantsEnabled: true)
+                visualHook.activate()
+                remLog("SBPlantsVisual hook group activated")
+
                 if classExists("SBDockIconListView") {
+                    // iOS 14-16: 使用原始 SBDockIconListView Hook
+                    let dockHook: SBPlants = SBPlants(plantsEnabled: true)
                     dockHook.activate()
-                    remLog("SBPlants hook group activated")
+                    remLog("SBPlants hook group activated (SBDockIconListView, iOS 14-16)")
+                } else if classExists("SBDockView") {
+                    // iOS 17+: 使用 SBDockView Hook 作为替代
+                    let dockHook17: SBPlantsDock_iOS17 = SBPlantsDock_iOS17(plantsEnabled: true)
+                    dockHook17.activate()
+                    remLog("SBPlantsDock_iOS17 hook group activated (SBDockView, iOS 17+)")
                 } else {
-                    remLog("⚠️ SBDockIconListView not found — plants hook skipped (iOS 17+ compatibility)")
+                    remLog("⚠️ Neither SBDockIconListView nor SBDockView found — plants hook skipped")
                 }
             }
             if sceneHook.birdsEnabled {
@@ -209,7 +223,7 @@ class SBDockHook: ClassHook<SBDockIconListView> {
 /// 原版 MobileMeadow 的关键 hook：当 MTMaterialView 的父视图是 SBDockView 时，
 /// 强制 alpha=1.0 且 hidden=NO，否则 Dock 背景半透明会遮挡植物
 class MTMaterialViewHook: ClassHook<MTMaterialView> {
-    typealias Group = SBPlants
+    typealias Group = SBPlantsVisual
 
     func setAlpha(_ alpha: CGFloat) {
         if let superview = target.superview, NSStringFromClass(type(of: superview)) == "SBDockView" {
@@ -230,7 +244,7 @@ class MTMaterialViewHook: ClassHook<MTMaterialView> {
 
 /// 隐藏主屏幕页面指示器小圆点（与原版行为一致）
 class SBIconListPageControlHook: ClassHook<SBIconListPageControl> {
-    typealias Group = SBPlants
+    typealias Group = SBPlantsVisual
 
     func setHidden(_ hidden: Bool) {
         orig.setHidden(true)
@@ -239,6 +253,31 @@ class SBIconListPageControlHook: ClassHook<SBIconListPageControl> {
     func didMoveToWindow() {
         orig.didMoveToWindow()
         target.isHidden = true
+    }
+}
+
+/// iOS 17+ 替代 Hook：直接 Hook SBDockView 而非 SBDockIconListView
+/// 因为 iOS 17 中 SBDockIconListView 类已被移除
+class SBDockViewHook: ClassHook<SBDockView> {
+    typealias Group = SBPlantsDock_iOS17
+    @Property var dockGround: MMGroundContainerView?
+
+    func didMoveToWindow() {
+        orig.didMoveToWindow()
+
+        guard target.superview != nil else {
+            remLog("SBDockViewHook: superview is nil, will retry on next didMoveToWindow")
+            return
+        }
+        guard self.dockGround == nil else { return }
+
+        remLog("SBDockViewHook: creating MMGroundContainerView (iOS 17+)...")
+        self.dockGround = MMGroundContainerView.shared
+        remLog("MeadowGroundDock created (iOS 17+)...")
+        if let ground = self.dockGround {
+            target.addSubview(ground)
+            remLog("SBDockViewHook: ground added to dock view, frame=\(ground.frame)")
+        }
     }
 }
 

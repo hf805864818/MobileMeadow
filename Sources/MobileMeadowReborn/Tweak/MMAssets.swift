@@ -30,9 +30,25 @@ import UIKit
 class MMAssets: NSObject {
     
     static var assetsPath: String {
+        // 支持多种越狱环境的路径
+        // RootHide/RELAXIN: /var/jb/Library/...
+        // 标准 rootless: /var/jb/Library/...
+        // 通过 RootHide Patcher 转换后路径会自动适配
         var path: String = "/var/jb/Library/Application Support/MobileMeadow/Assets"
         if !FileManager.default.fileExists(atPath: path) {
+            // 尝试标准 rootless 路径（无 /var/jb 前缀的情况）
             path = "/Library/Application Support/MobileMeadow/Assets"
+        }
+        if !FileManager.default.fileExists(atPath: path) {
+            // 尝试 roothide 特定路径
+            path = "/var/mobile/Library/Application Support/MobileMeadow/Assets"
+        }
+        // 最后尝试从 bundle 中加载内置资源
+        if !FileManager.default.fileExists(atPath: path) {
+            // 使用独立 App 的 bundle 资源路径
+            if let bundlePath = Bundle.main.path(forResource: "Assets", ofType: nil) {
+                path = bundlePath
+            }
         }
         
         return path

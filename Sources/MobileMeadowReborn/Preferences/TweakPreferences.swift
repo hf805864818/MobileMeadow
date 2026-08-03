@@ -66,9 +66,16 @@ class TweakPreferences {
 
         let fileManager = FileManager()
         let plistIdentifier: String = "com.pkgfiles.mobilemeadowrebornprefs.plist"
-        let plistPath: String = fileManager.fileExists(atPath: "/var/jb/")
-            ? "/var/jb/var/mobile/Library/Preferences/" + plistIdentifier
-            : "/var/mobile/Library/Preferences/" + plistIdentifier
+        
+        // 兼容多种越狱环境的偏好文件路径
+        let plistPath: String
+        if fileManager.fileExists(atPath: "/var/jb/") {
+            // RootHide / 标准 rootless 越狱
+            plistPath = "/var/jb/var/mobile/Library/Preferences/" + plistIdentifier
+        } else {
+            // rootful 越狱或独立 App 模式
+            plistPath = "/var/mobile/Library/Preferences/" + plistIdentifier
+        }
         
         if let data = fileManager.contents(atPath: plistPath) {
             do {

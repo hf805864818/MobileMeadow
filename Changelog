@@ -1,10 +1,17 @@
+1.0.36
+- [iOS 17] 修复 SBDockIconListView 在 iOS 17 中被移除导致的植物功能跳过
+- [iOS 17] 新增 SBDockViewHook 作为 iOS 17+ Dock 植物的替代 Hook 目标
+- [RootHide] 适配 RootHide/RELAXIN 越狱环境的资源路径
+- [RootHide] 新增 MobileMeadowStandalone 独立 App 子项目
+- 多路径资产加载支持（/var/jb, /var/mobile, Bundle）
+- 重构 Hook 组结构，分离视觉和 Dock Hook
+1.0.35
+- Initial Release with iOS 17 bird overlay support
 1.0.2
 - Fixed preferences for Jailbreaks with symlinks
-
 1.0.1
 - Fixed an issue to ensure that only applications with enabled notifications shows up
 - Added a option to disable birds in applications
 - Bugfixes and improvements
-
 1.0
 - Initial Release

@@ -34,6 +34,14 @@ class MMAssets: NSObject {
         if !FileManager.default.fileExists(atPath: path) {
             path = "/Library/Application Support/MobileMeadow/Assets"
         }
+        if !FileManager.default.fileExists(atPath: path) {
+            path = "/var/mobile/Library/Application Support/MobileMeadow/Assets"
+        }
+        if !FileManager.default.fileExists(atPath: path) {
+            if let bundlePath = Bundle.main.path(forResource: "Assets", ofType: nil) {
+                path = bundlePath
+            }
+        }
         
         return path
     }
