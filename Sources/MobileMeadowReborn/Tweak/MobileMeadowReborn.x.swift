@@ -97,7 +97,7 @@ struct SBMailBoxBirdNotification: HookGroup { let notificationHookEnabled: Bool 
 
 //MARK: - Safe Activation Helper
 /// 安全激活 Hook 组，捕获 NSException 防止安全模式
-func safeActivate(_ name: String, _ block: () -> Void) {
+func safeActivate(_ name: String, _ block: @escaping () -> Void) {
     let success = MMSafeActivate(name) {
         block()
     }
