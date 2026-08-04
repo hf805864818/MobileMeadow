@@ -114,6 +114,14 @@ func safeActivate(_ name: String, _ block: @escaping () -> Void) {
 
 //MARK: - Initialize Tweak
 struct MobileMeadowReborn: Tweak {
+    /// 重写 Orion 的错误处理器，阻止 fatalError 崩溃
+    /// Orion 默认的 handleErrorDefault 会调用 orionError → fatalError → EXC_BREAKPOINT
+    /// 这无法被 ObjC @try/@catch 捕获，必须在此拦截
+    static func handleError(_ error: Error) {
+        remLog("⚠️ Orion hook error (suppressed): \(error.localizedDescription)")
+        // 不调用 fatalError，静默继续
+    }
+
     init() {
         remLog("=== MobileMeadowReborn init() ===")
         remLog("iOS Version: \(UIDevice.current.systemVersion)")
@@ -129,9 +137,22 @@ struct MobileMeadowReborn: Tweak {
         case true:
             remLog("Tweak is Enabled! :)")
             if tweakPrefs.plantsEnabled {
-                // 视觉 Hook（MTMaterialView + SBIconListPageControl）
-                safeActivate("SBPlantsVisual") {
-                    SBPlantsVisual().activate()
+                // SBPlantsVisual 组包含 MTMaterialViewHook 和 SBIconListPageControlHook
+                // 必须检查两个类都存在才能激活，否则 Orion 会 fatalError
+                let mtMaterialExists = classExists("MTMaterialView")
+                let pageControlExists = classExists("SBIconListPageControl")
+                remLog("SBPlantsVisual prereq: MTMaterialView=\(mtMaterialExists), SBIconListPageControl=\(pageControlExists)")
+
+                if mtMaterialExists && pageControlExists {
+                    safeActivate("SBPlantsVisual") {
+                        SBPlantsVisual().activate()
+                    }
+                } else {
+                    remLog("⚠️ SBPlantsVisual skipped — MTMaterialView or SBIconListPageControl not found on this iOS")
+                    // iOS 17: 单独尝试 MTMaterialView（如果存在），跳过 SBIconListPageControl
+                    if mtMaterialExists {
+                        remLog("  MTMaterialView exists, but SBPlantsVisual requires both classes — skipping entire group")
+                    }
                 }
 
                 if classExists("SBDockIconListView") {
@@ -147,6 +168,8 @@ struct MobileMeadowReborn: Tweak {
                 }
             }
             if tweakPrefs.birdsEnabled {
+                // SBBirds 组包含 SBInterfaceHook: ClassHook<SpringBoard>
+                // SpringBoard 类在 SpringBoard 进程中必然存在
                 safeActivate("SBBirds") {
                     SBBirds().activate()
                 }
@@ -156,12 +179,16 @@ struct MobileMeadowReborn: Tweak {
                         safeActivate("SBMailBoxBird") {
                             SBMailBoxBird().activate()
                         }
+                    } else {
+                        remLog("⚠️ SBRootFolderController not found — mailbox hook skipped")
                     }
 
                     if classExists("NCNotificationShortLookViewController") {
                         safeActivate("SBMailBoxBirdNotification") {
                             SBMailBoxBirdNotification().activate()
                         }
+                    } else {
+                        remLog("⚠️ NCNotificationShortLookViewController not found — notification hook skipped")
                     }
                 }
 
