@@ -1,6 +1,7 @@
 #import "RemoteLog.h"
 #import <dlfcn.h>
 #import <unistd.h>
+#import <time.h>
 
 // ============================================================
 // jbroot 路径检测 — 兼容 rootless / Roothide / rootful
@@ -193,9 +194,14 @@ void RLogv(NSString *fmt, va_list args) {
         }
         if (handle) {
             [handle seekToEndOfFile];
-            NSString *timestamp = [NSDateFormatter localizedStringFromDate:[NSDate date]
-                                                              dateStyle:NSDateFormatterShortStyle
-                                                                timeStyle:NSDateFormatterMediumStyle];
+            // 使用 strftime 替代 NSDateFormatter，避免 ICU 库崩溃
+            // NSDateFormatter localizedStringFromDate: 依赖 libicucore，
+            // 在越狱环境下 ICU 数据可能损坏导致 _platform_strlen 崩溃
+            time_t t = (time_t)[[NSDate date] timeIntervalSince1970];
+            struct tm *tm_info = localtime(&t);
+            char timeBuf[64];
+            strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S", tm_info);
+            NSString *timestamp = [NSString stringWithUTF8String:timeBuf];
             NSString *line = [NSString stringWithFormat:@"[%@] %@\n", timestamp, logLine];
             [handle writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
             [handle closeFile];

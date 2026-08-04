@@ -44,36 +44,36 @@ static void MMUncaughtExceptionHandler(NSException *exception) {
 }
 
 // ============================================================
-// KVC 安全防护 — 同 MobileMeadowReborn.m 中的实现
+// KVC 全局安全防护 — NSObject 级别
+// 同 MobileMeadowReborn.m 中的实现，直接在 NSObject 根类上替换
+// setValue:forUndefinedKey: 和 valueForUndefinedKey:，
+// 让所有对象的 KVC 遇到未知 key 时静默忽略而非崩溃。
 // ============================================================
 
-static void MMInstallKVCSafeHandler(Class cls) {
-    if (!cls) return;
-
+static void MMInstallGlobalKVCSafety(void) {
     SEL setSel = @selector(setValue:forUndefinedKey:);
     IMP setImp = imp_implementationWithBlock(^(id self, id value, NSString *key) {
         RLog(@"⚠️ KVC ignored (Apps): [%@ setValue:%@ forKey:%@]",
              NSStringFromClass([self class]), value, key);
     });
-    if (!class_addMethod(cls, setSel, setImp, "v@:@@")) {
-        class_replaceMethod(cls, setSel, setImp, "v@:@@");
-    }
+    class_replaceMethod([NSObject class], setSel, setImp, "v@:@@");
 
     SEL getSel = @selector(valueForUndefinedKey:);
     IMP getImp = imp_implementationWithBlock(^(id self, NSString *key) {
-        RLog(@"⚠️ KVC ignored (Apps): [%@ valueForKey:%@] -> nil", NSStringFromClass([self class]), key);
+        RLog(@"⚠️ KVC ignored (Apps): [%@ valueForKey:%@] -> nil",
+             NSStringFromClass([self class]), key);
         return nil;
     });
-    if (!class_addMethod(cls, getSel, getImp, "@@:@")) {
-        class_replaceMethod(cls, getSel, getImp, "@@:@");
-    }
+    class_replaceMethod([NSObject class], getSel, getImp, "@@:@");
+
+    RLog(@"Global KVC safety installed on NSObject (Apps)");
 }
 
 __attribute__((constructor)) static void init() {
     NSSetUncaughtExceptionHandler(MMUncaughtExceptionHandler);
 
-    // 安装 KVC 安全处理器
-    MMInstallKVCSafeHandler(objc_getClass("_UIBarBackground"));
+    // 安装全局 KVC 安全防护
+    MMInstallGlobalKVCSafety();
 
     RLog(@"MobileMeadowRebornApps dylib constructor — orion_init() about to be called");
     // Initialize Orion - do not remove this line.
