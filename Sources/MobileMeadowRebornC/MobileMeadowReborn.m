@@ -39,8 +39,8 @@ id _Nullable MMGetProperty(id object, NSString *key) {
 }
 
 __attribute__((constructor)) static void init() {
-    RLog("MobileMeadowReborn dylib constructor — orion_init() about to be called");
+    RLog(@"MobileMeadowReborn dylib constructor — orion_init() about to be called");
     // Initialize Orion - do not remove this line.
     orion_init();
-    RLog("MobileMeadowReborn dylib constructor — orion_init() complete");
+    RLog(@"MobileMeadowReborn dylib constructor — orion_init() complete");
 }
