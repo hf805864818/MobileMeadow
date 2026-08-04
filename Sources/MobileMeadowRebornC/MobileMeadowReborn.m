@@ -1,30 +1,93 @@
 #import <Orion/Orion.h>
 #import <objc/runtime.h>
+#import <signal.h>
+#import <setjmp.h>
+#import <pthread.h>
 #import "MobileMeadowReborn.h"
 #import "RemoteLog.h"
 
 // ============================================================
-// Swift 可调用的 ObjC 异常捕获函数
-// 用于安全地激活 Orion Hook 组
+// 致命错误捕获机制 — sigsetjmp/siglongjmp
+//
+// 问题根因：
+// Orion 当 ClassHook<T> 的 T 类不存在时，会调用 orionError() → fatalError()
+// → _assertionFailure() → __builtin_trap() → SIGTRAP
+// Swift 的 fatalError 产生 SIGTRAP 信号，@try/@catch 无法捕获。
+// Tweak.handleError 在 Orion 1.0.1-3 中是 protocol extension 方法，
+// Swift 静态派发，无法被覆盖。
+//
+// 解决方案：
+// 在调用 Orion 激活之前安装 SIGTRAP/SIGILL 信号处理器，
+// 用 sigsetjmp/siglongjmp 从信号处理上下文中安全恢复。
 // ============================================================
 
-/// 安全执行 block，捕获 NSException
-/// Swift 无法直接捕获 NSException，必须通过此 ObjC 函数
+/// 线程局部 jmp_buf，支持多线程并发激活
+static pthread_key_t s_jmpbuf_key;
+static pthread_once_t s_jmpbuf_key_once = PTHREAD_ONCE_INIT;
+
+static void MM_MakeJmpbufKey(void) {
+    pthread_key_create(&s_jmpbuf_key, NULL);
+}
+
+static sigjmp_buf *MM_GetJmpbuf(void) {
+    pthread_once(&s_jmpbuf_key_once, MM_MakeJmpbufKey);
+    sigjmp_buf *buf = pthread_getspecific(s_jmpbuf_key);
+    if (!buf) {
+        buf = malloc(sizeof(sigjmp_buf));
+        pthread_setspecific(s_jmpbuf_key, buf);
+    }
+    return buf;
+}
+
+/// SIGTRAP/SIGILL 信号处理器
+/// 当 Orion 调用 fatalError 时触发，跳转回 MMSafeActivate 的安全点
+static void MM_SignalHandler(int sig) {
+    sigjmp_buf *buf = MM_GetJmpbuf();
+    // 只有 buf 有效时才跳转（buf 的标记位由 sigsetjmp 设置）
+    siglongjmp(*buf, sig);
+}
+
+/// 安全执行 block，同时捕获 NSException 和 fatalError(SIGTRAP)
+/// 这是唯一能阻止 Orion fatalError 导致 SpringBoard 崩溃的方法
 BOOL MMSafeActivate(NSString * _Nullable context, void(^block)(void)) {
-    @try {
-        block();
-        return YES;
-    } @catch (NSException *exception) {
-        RLog(@"⚠️ HOOK ACTIVATION FAILED: %@ — %@ — %@",
-             context ?: @"unknown",
-             exception.name,
-             exception.reason);
-        return NO;
-    } @catch (id other) {
-        RLog(@"⚠️ HOOK ACTIVATION FAILED (unknown exception): %@",
+    // 保存旧的信号处理器
+    struct sigaction old_trap, old_ill;
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = MM_SignalHandler;
+    sa.sa_flags = SA_NODEFER; // 允许递归信号，防止某些边缘情况死锁
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGTRAP, &sa, &old_trap);
+    sigaction(SIGILL, &sa, &old_ill);
+
+    sigjmp_buf *buf = MM_GetJmpbuf();
+    int jump_result = sigsetjmp(*buf, 1);
+
+    if (jump_result == 0) {
+        // 正常执行路径
+        @try {
+            block();
+        } @catch (NSException *exception) {
+            RLog(@"⚠️ HOOK ACTIVATION FAILED (NSException): %@ — %@ — %@",
+                 context ?: @"unknown", exception.name, exception.reason);
+            sigaction(SIGTRAP, &old_trap, NULL);
+            sigaction(SIGILL, &old_ill, NULL);
+            return NO;
+        }
+    } else {
+        // 信号捕获路径 — 从 SIGTRAP/SIGILL 恢复
+        const char *sigName = (jump_result == SIGTRAP) ? "SIGTRAP" :
+                              (jump_result == SIGILL)  ? "SIGILL"  : "UNKNOWN";
+        RLog(@"⚠️ HOOK ACTIVATION FAILED (%s, fatalError): %@", sigName,
              context ?: @"unknown");
+        sigaction(SIGTRAP, &old_trap, NULL);
+        sigaction(SIGILL, &old_ill, NULL);
         return NO;
     }
+
+    sigaction(SIGTRAP, &old_trap, NULL);
+    sigaction(SIGILL, &old_ill, NULL);
+    return YES;
 }
 
 /// 使用 objc_setAssociatedObject 设置关联对象

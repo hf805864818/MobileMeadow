@@ -1,27 +1,73 @@
 #import <Orion/Orion.h>
+#import <signal.h>
+#import <setjmp.h>
+#import <pthread.h>
 #import "MobileMeadowRebornApps.h"
 #import "RemoteLog.h"
 
 // ============================================================
-// Swift 可调用的 ObjC 异常捕获函数
+// 致命错误捕获机制 — sigsetjmp/siglongjmp
+// 同 MobileMeadowReborn.m 中的实现
 // ============================================================
 
-/// 安全执行 block，捕获 NSException
+/// 线程局部 jmp_buf，支持多线程并发激活
+static pthread_key_t s_jmpbuf_key;
+static pthread_once_t s_jmpbuf_key_once = PTHREAD_ONCE_INIT;
+
+static void MM_MakeJmpbufKey(void) {
+    pthread_key_create(&s_jmpbuf_key, NULL);
+}
+
+static sigjmp_buf *MM_GetJmpbuf(void) {
+    pthread_once(&s_jmpbuf_key_once, MM_MakeJmpbufKey);
+    sigjmp_buf *buf = pthread_getspecific(s_jmpbuf_key);
+    if (!buf) {
+        buf = malloc(sizeof(sigjmp_buf));
+        pthread_setspecific(s_jmpbuf_key, buf);
+    }
+    return buf;
+}
+
+static void MM_SignalHandler(int sig) {
+    sigjmp_buf *buf = MM_GetJmpbuf();
+    siglongjmp(*buf, sig);
+}
+
+/// 安全执行 block，同时捕获 NSException 和 fatalError(SIGTRAP)
 BOOL MMSafeActivate(NSString * _Nullable context, void(^block)(void)) {
-    @try {
-        block();
-        return YES;
-    } @catch (NSException *exception) {
-        RLog(@"⚠️ HOOK ACTIVATION FAILED: %@ — %@ — %@",
-             context ?: @"unknown",
-             exception.name,
-             exception.reason);
-        return NO;
-    } @catch (id other) {
-        RLog(@"⚠️ HOOK ACTIVATION FAILED (unknown exception): %@",
-             context ?: @"unknown");
+    struct sigaction old_trap, old_ill;
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = MM_SignalHandler;
+    sa.sa_flags = SA_NODEFER;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGTRAP, &sa, &old_trap);
+    sigaction(SIGILL, &sa, &old_ill);
+
+    sigjmp_buf *buf = MM_GetJmpbuf();
+    int jump_result = sigsetjmp(*buf, 1);
+
+    if (jump_result == 0) {
+        @try {
+            block();
+        } @catch (NSException *exception) {
+            RLog(@"⚠️ HOOK ACTIVATION FAILED (NSException): %@ — %@",
+                 context ?: @"unknown", exception.name);
+            sigaction(SIGTRAP, &old_trap, NULL);
+            sigaction(SIGILL, &old_ill, NULL);
+            return NO;
+        }
+    } else {
+        RLog(@"⚠️ HOOK ACTIVATION FAILED (signal %d, fatalError): %@",
+             jump_result, context ?: @"unknown");
+        sigaction(SIGTRAP, &old_trap, NULL);
+        sigaction(SIGILL, &old_ill, NULL);
         return NO;
     }
+
+    sigaction(SIGTRAP, &old_trap, NULL);
+    sigaction(SIGILL, &old_ill, NULL);
+    return YES;
 }
 
 /// 使用 objc_setAssociatedObject 设置关联对象
