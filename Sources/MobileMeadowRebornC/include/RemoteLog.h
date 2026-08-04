@@ -14,6 +14,23 @@ void RLogv(NSString *fmt, va_list args);
 /// 远程日志输出（格式化）
 void RLog(NSString *fmt, ...);
 
+/// 获取当前越狱的 jbroot 路径
+/// 兼容 rootless (/var/jb) 和 Roothide (/var/containers/Bundle/Application/.jbroot-XXXX)
+/// 返回 nil 表示未找到 jbroot（可能是 rootful 越狱）
+NSString *MMGetJbrootPath(void);
+
+/// 获取日志文件路径
+/// 优先使用 jbroot 下的路径，回退到 /var/mobile/Library/Logs/
+NSString *MMGetLogFilePath(void);
+
+/// 获取资源目录路径（Library/Application Support/MobileMeadow/Assets）
+/// 自动适配 rootless / Roothide / rootful
+NSString *MMGetAssetsPath(void);
+
+/// 获取偏好文件路径（Library/Preferences/com.pkgfiles.mobilemeadowrebornprefs.plist）
+/// 自动适配 rootless / Roothide / rootful
+NSString *MMGetPreferencesPath(void);
+
 #ifdef __cplusplus
 }
 #endif

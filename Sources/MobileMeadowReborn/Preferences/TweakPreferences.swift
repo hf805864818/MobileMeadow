@@ -1,5 +1,5 @@
 /*
- 
+
  MIT License
 
  Copyright (c) 2024 ★ Install Package Files
@@ -21,32 +21,33 @@
  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  SOFTWARE.
- 
+
 */
 
 import Foundation
+import MobileMeadowRebornC
 
 class TweakPreferences {
     static let preferences = TweakPreferences()
-    
+
     func createPreferences(atPath path: String) {
         let mirror = Mirror(reflecting: SettingsModel())
         var data: [String: Any] = [:]
-        
+
         for child in mirror.children {
             guard let key = child.label else { return }
             data.updateValue(child.value, forKey: key)
         }
-        
+
         let defaultSettings = NSDictionary(dictionary: data)
         defaultSettings.write(toFile: path, atomically: true)
     }
-    
+
     func updatePreferences(atPath path: String) {
         guard let plistData: NSDictionary = NSDictionary(contentsOfFile: path) else { return }
         let plistKeys: [String] = plistData.allKeys.compactMap { $0 as? String }
         let settingsData = SettingsModel().toDictionary()
-        
+
         for i in settingsData {
             if !plistKeys.contains(i.key) {
                 remLog("The Key: \(i.key) don't exist! Adding to .plist...")
@@ -55,7 +56,7 @@ class TweakPreferences {
             }
         }
     }
-    
+
     func loadPreferences(retryCount: Int = 0) -> SettingsModel {
         // 防止无限递归：最多重试 2 次，超过则返回默认设置
         let maxRetries = 2
@@ -64,19 +65,14 @@ class TweakPreferences {
             return SettingsModel()
         }
 
+        // 使用 C 函数获取偏好文件路径，自动适配 rootless / Roothide / rootful
+        let plistPath = MMGetPreferencesPath()
+        remLog("loadPreferences: plistPath = \(plistPath)")
+        remLog("loadPreferences: jbroot = \(MMGetJbrootPath() ?? "nil")")
+        remLog("loadPreferences: file exists = \(FileManager.default.fileExists(atPath: plistPath))")
+
         let fileManager = FileManager()
-        let plistIdentifier: String = "com.pkgfiles.mobilemeadowrebornprefs.plist"
-        
-        // 兼容多种越狱环境的偏好文件路径
-        let plistPath: String
-        if fileManager.fileExists(atPath: "/var/jb/") {
-            // RootHide / 标准 rootless 越狱
-            plistPath = "/var/jb/var/mobile/Library/Preferences/" + plistIdentifier
-        } else {
-            // rootful 越狱或独立 App 模式
-            plistPath = "/var/mobile/Library/Preferences/" + plistIdentifier
-        }
-        
+
         if let data = fileManager.contents(atPath: plistPath) {
             do {
                 let settings = try PropertyListDecoder().decode(SettingsModel.self, from: data)

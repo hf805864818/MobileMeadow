@@ -1,5 +1,5 @@
 /*
- 
+
  MIT License
 
  Copyright (c) 2024 ★ Install Package Files
@@ -21,39 +21,36 @@
  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  SOFTWARE.
- 
+
 */
 
 import Foundation
 import UIKit
+import MobileMeadowRebornAppsC
 
 class MMAssets: NSObject {
-    
+
     private static var assetsPath: String {
-        var path: String = "/var/jb/Library/Application Support/MobileMeadow/Assets"
-        if !FileManager.default.fileExists(atPath: path) {
-            path = "/Library/Application Support/MobileMeadow/Assets"
+        let path = MMGetAssetsPath()
+        remLog("MMAssets (Apps): assetsPath = \(path)")
+        if FileManager.default.fileExists(atPath: path) {
+            return path
         }
-        if !FileManager.default.fileExists(atPath: path) {
-            path = "/var/mobile/Library/Application Support/MobileMeadow/Assets"
-        }
-        if !FileManager.default.fileExists(atPath: path) {
-            if let bundlePath = Bundle.main.path(forResource: "Assets", ofType: nil) {
-                path = bundlePath
+        if let bundlePath = Bundle.main.path(forResource: "Assets", ofType: nil) {
+            if FileManager.default.fileExists(atPath: bundlePath) {
+                return bundlePath
             }
         }
-        
         return path
     }
 
     private static var cachedImages: [String: UIImage] = [:]
     private static var imageCountsForPrefixes: [String: NSNumber] = [:]
-    
-    // Overriding init methods to prevent instantiation
+
     private override init() {
         fatalError("Don't use -init for this class.")
     }
-    
+
     static func imageNamed(_ name: String) -> UIImage? {
         if let cachedImage = cachedImages[name] {
             return cachedImage
@@ -65,7 +62,7 @@ class MMAssets: NSObject {
         }
         return nil
     }
-    
+
     static func randomImage(withPrefix prefix: String) -> UIImage? {
         if let imageCount = imageCountsForPrefixes[prefix] {
             return getRandomImage(for: prefix, count: imageCount.uintValue)
@@ -75,7 +72,7 @@ class MMAssets: NSObject {
             return getRandomImage(for: prefix, count: imageCountRaw)
         }
     }
-    
+
     private static func findImageCount(for prefix: String) -> UInt {
         var imageCountRaw: UInt = 0
         var isDir: ObjCBool = false
@@ -86,7 +83,7 @@ class MMAssets: NSObject {
         } while FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && !isDir.boolValue
         return imageCountRaw - 1
     }
-    
+
     private static func getRandomImage(for prefix: String, count: UInt) -> UIImage? {
         guard count > 0 else { return nil }
         let randomIndex = arc4random_uniform(UInt32(count))

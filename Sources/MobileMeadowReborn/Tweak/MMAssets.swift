@@ -1,5 +1,5 @@
 /*
- 
+
  MIT License
 
  Copyright (c) 2024 ★ Install Package Files
@@ -21,36 +21,51 @@
  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  SOFTWARE.
- 
+
 */
 
 import Foundation
 import UIKit
+import MobileMeadowRebornC
 
 class MMAssets: NSObject {
-    
+
     static var assetsPath: String {
-        // 支持多种越狱环境的路径
-        // RootHide/RELAXIN: /var/jb/Library/...
-        // 标准 rootless: /var/jb/Library/...
-        // 通过 RootHide Patcher 转换后路径会自动适配
-        var path: String = "/var/jb/Library/Application Support/MobileMeadow/Assets"
-        if !FileManager.default.fileExists(atPath: path) {
-            // 尝试标准 rootless 路径（无 /var/jb 前缀的情况）
-            path = "/Library/Application Support/MobileMeadow/Assets"
+        // 使用 C 函数获取资源路径，自动适配 rootless / Roothide / rootful
+        let path = MMGetAssetsPath()
+        remLog("MMAssets: assetsPath resolved to: \(path)")
+        remLog("MMAssets: jbroot = \(MMGetJbrootPath() ?? "nil")")
+        remLog("MMAssets: path exists = \(FileManager.default.fileExists(atPath: path))")
+
+        if FileManager.default.fileExists(atPath: path) {
+            return path
         }
-        if !FileManager.default.fileExists(atPath: path) {
-            // 尝试 roothide 特定路径
-            path = "/var/mobile/Library/Application Support/MobileMeadow/Assets"
-        }
-        // 最后尝试从 bundle 中加载内置资源
-        if !FileManager.default.fileExists(atPath: path) {
-            // 使用独立 App 的 bundle 资源路径
-            if let bundlePath = Bundle.main.path(forResource: "Assets", ofType: nil) {
-                path = bundlePath
+
+        // 如果 C 函数返回的路径不存在，尝试从 bundle 中加载
+        if let bundlePath = Bundle.main.path(forResource: "Assets", ofType: nil) {
+            if FileManager.default.fileExists(atPath: bundlePath) {
+                remLog("MMAssets: using bundle path: \(bundlePath)")
+                return bundlePath
             }
         }
-        
+
+        // 列出可能的目录内容以帮助诊断
+        if let jbroot = MMGetJbrootPath() {
+            let supportDir = "\(jbroot)/Library/Application Support"
+            if let contents = try? FileManager.default.contentsOfDirectory(atPath: supportDir) {
+                remLog("MMAssets: contents of \(supportDir): \(contents)")
+            } else {
+                remLog("MMAssets: cannot list \(supportDir)")
+            }
+
+            let mobileSupportDir = "\(jbroot)/var/mobile/Library/Application Support"
+            if let contents = try? FileManager.default.contentsOfDirectory(atPath: mobileSupportDir) {
+                remLog("MMAssets: contents of \(mobileSupportDir): \(contents)")
+            } else {
+                remLog("MMAssets: cannot list \(mobileSupportDir)")
+            }
+        }
+
         return path
     }
 
@@ -58,12 +73,12 @@ class MMAssets: NSObject {
     private static let syncQueue = DispatchQueue(label: "com.pkgfiles.mobilemeadow.assets.sync")
     private static var cachedImages: [String: UIImage] = [:]
     private static var imageCountsForPrefixes: [String: NSNumber] = [:]
-    
+
     // Overriding init methods to prevent instantiation
     private override init() {
         fatalError("Don't use -init for this class.")
     }
-    
+
     static func imageNamed(_ name: String) -> UIImage? {
         // 线程安全：在串行队列中读取缓存
         var cachedImage: UIImage?
@@ -83,7 +98,7 @@ class MMAssets: NSObject {
         }
         return nil
     }
-    
+
     static func randomImage(withPrefix prefix: String) -> UIImage? {
         var imageCount: NSNumber?
         syncQueue.sync {
@@ -100,7 +115,7 @@ class MMAssets: NSObject {
             return getRandomImage(for: prefix, count: imageCountRaw)
         }
     }
-    
+
     private static func findImageCount(for prefix: String) -> UInt {
         var imageCountRaw: UInt = 0
         var isDir: ObjCBool = false
@@ -111,7 +126,7 @@ class MMAssets: NSObject {
         } while FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && !isDir.boolValue
         return imageCountRaw - 1
     }
-    
+
     private static func getRandomImage(for prefix: String, count: UInt) -> UIImage? {
         guard count > 0 else { return nil }
         let randomIndex = UInt32.random(in: 0..<UInt32(count))

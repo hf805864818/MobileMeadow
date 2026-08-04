@@ -1,4 +1,5 @@
 import Orion
+import UIKit
 import MobileMeadowRebornC
 
 // MobileMeadow Reborn - Turn your phone into a meadow. Add flowers to your apps. Let birds fly on your screen.
@@ -106,6 +107,11 @@ struct SBMailBoxBirdNotification: HookGroup { let notificationHookEnabled: Bool 
 struct MobileMeadowReborn: Tweak {
     init() {
         remLog("=== MobileMeadowReborn init() ===")
+        remLog("iOS Version: \(UIDevice.current.systemVersion)")
+        remLog("Bundle ID: \(Bundle.main.bundleIdentifier ?? "nil")")
+        remLog("jbroot: \(MMGetJbrootPath() ?? "nil")")
+        remLog("log file: \(MMGetLogFilePath())")
+        remLog("assets path: \(MMGetAssetsPath())")
         remLog("Preferences Loading...")
         tweakPrefs = TweakPreferences.preferences.loadPreferences()
         remLog("Prefs: enabled=\(tweakPrefs.isTweakEnabled), plants=\(tweakPrefs.plantsEnabled), birds=\(tweakPrefs.birdsEnabled), mailbox=\(tweakPrefs.mailBoxEnabled)")
