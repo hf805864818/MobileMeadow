@@ -100,11 +100,34 @@ struct SBMailBoxBird: HookGroup {}
 struct SBMailBoxBirdNotification: HookGroup {}
 
 //MARK: - Safe Activation Helper
-/// 安全激活 Hook 组，捕获 NSException 防止安全模式
+/// 安全激活 Hook 组
+///
+/// 双重防线阻止 Orion fatalError 导致安全模式：
+/// 主防线：updateOrionErrorHandler 在 orionError() 内部拦截（fatalError 之前）
+/// 兜底防线：MMSafeActivate 的 POSIX 信号处理器（SIGTRAP/SIGILL）
+///
+/// 注意：handleError 在 Orion 1.0.1-3 中无法被覆盖（协议见证表版本不一致），
+/// 所以必须用 updateOrionErrorHandler 全局替换错误处理器。
 func safeActivate(_ name: String, _ block: @escaping () -> Void) {
+    // 保存旧的全局错误处理器
+    var savedOldHandler: ((String, StaticString, UInt) -> Never)?
+    updateOrionErrorHandler { old in
+        savedOldHandler = old
+        return { message, file, line in
+            // 在 Orion 调用 fatalError 之前拦截，用 siglongjmp 跳回安全点
+            MM_GlobalErrorHandler(message, file.description, Int32(line))
+        }
+    }
+
     let success = MMSafeActivate(name) {
         block()
     }
+
+    // 恢复旧的全局错误处理器
+    if let old = savedOldHandler {
+        updateOrionErrorHandler { _ in old }
+    }
+
     if success {
         remLog("✅ Hook activated: \(name)")
     } else {
@@ -114,9 +137,9 @@ func safeActivate(_ name: String, _ block: @escaping () -> Void) {
 
 //MARK: - Initialize Tweak
 struct MobileMeadowReborn: Tweak {
-    /// 重写 Orion 的错误处理器，阻止 fatalError 崩溃
-    /// Orion 默认的 handleErrorDefault 会调用 orionError → fatalError → EXC_BREAKPOINT
-    /// 这无法被 ObjC @try/@catch 捕获，必须在此拦截
+    /// 覆盖 Orion 的错误处理器（在协议声明了 handleError 的版本中有效）
+    /// 注意：Orion 1.0.1-3 中可能因协议见证表版本不一致而无法被调用，
+    /// 真正的防线在 safeActivate() 中的 updateOrionErrorHandler
     static func handleError(_ error: Error) {
         remLog("⚠️ Orion hook error (suppressed): \(error.localizedDescription)")
         // 不调用 fatalError，静默继续

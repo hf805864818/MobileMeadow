@@ -9,16 +9,21 @@
 // ============================================================
 // 致命错误捕获机制 — sigsetjmp/siglongjmp
 //
-// 问题根因：
-// Orion 当 ClassHook<T> 的 T 类不存在时，会调用 orionError() → fatalError()
-// → _assertionFailure() → __builtin_trap() → SIGTRAP
-// Swift 的 fatalError 产生 SIGTRAP 信号，@try/@catch 无法捕获。
-// Tweak.handleError 在 Orion 1.0.1-3 中是 protocol extension 方法，
-// Swift 静态派发，无法被覆盖。
+// 问题根因（深度分析）：
+// 1. Orion 当 ClassHook<T> 的 T 类不存在时，调用 orionError() → fatalError()
+//    → _assertionFailure() → __builtin_trap() → SIGTRAP
+// 2. Tweak.handleError 虽然在 Orion 源码中声明在协议里，但用户设备上的
+//    Orion 1.0.1-3 可能编译时协议布局不同，导致静态派发到默认实现
+// 3. POSIX 信号处理器 (SIGTRAP) 无效：因为 iOS 上 __builtin_trap() 产生的
+//    EXC_BREAKPOINT Mach 异常会被系统的 CrashReporter 先捕获，
+//    POSIX 信号处理器根本不会被调用
 //
-// 解决方案：
-// 在调用 Orion 激活之前安装 SIGTRAP/SIGILL 信号处理器，
-// 用 sigsetjmp/siglongjmp 从信号处理上下文中安全恢复。
+// 双重解决方案：
+// A. 主方案 — updateOrionErrorHandler（Swift 层调用）
+//    在 Orion 的 orionError() 内部、fatalError() 之前拦截，
+//    用 siglongjmp 跳回安全点。这是唯一能100%阻止崩溃的方法。
+// B. 兜底方案 — sigsetjmp/siglongjmp + POSIX 信号处理器
+//    保留作为最后防线（某些越狱环境可能禁用了 CrashReporter）
 // ============================================================
 
 /// 线程局部 jmp_buf，支持多线程并发激活
@@ -47,8 +52,21 @@ static void MM_SignalHandler(int sig) {
     siglongjmp(*buf, sig);
 }
 
+/// 全局错误处理跳转函数（noreturn）
+/// 被 Swift 层的 updateOrionErrorHandler 闭包调用
+/// 在 orionError() 内部、fatalError() 之前拦截，用 siglongjmp 跳回安全点
+/// 这是唯一能 100% 阻止 Orion fatalError 导致 SpringBoard 崩溃的方法
+__attribute__((noreturn)) void MM_GlobalErrorHandler(const char *message, const char *file, int line) {
+    RLog(@"🔥 Orion FATAL intercepted: %s (%s:%d)", message, file, line);
+    sigjmp_buf *buf = MM_GetJmpbuf();
+    siglongjmp(*buf, 1);
+    // 如果 siglongjmp 返回（不应该发生），调用 abort 满足 noreturn 约定
+    abort();
+}
+
 /// 安全执行 block，同时捕获 NSException 和 fatalError(SIGTRAP)
-/// 这是唯一能阻止 Orion fatalError 导致 SpringBoard 崩溃的方法
+/// 主防线：由 updateOrionErrorHandler 在 orionError() 内部拦截
+/// 兜底防线：POSIX 信号处理器（某些越狱环境可能有效）
 BOOL MMSafeActivate(NSString * _Nullable context, void(^block)(void)) {
     // 保存旧的信号处理器
     struct sigaction old_trap, old_ill;

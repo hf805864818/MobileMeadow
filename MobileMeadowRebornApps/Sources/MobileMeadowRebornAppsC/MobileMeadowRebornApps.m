@@ -33,6 +33,15 @@ static void MM_SignalHandler(int sig) {
     siglongjmp(*buf, sig);
 }
 
+/// 全局错误处理跳转函数（noreturn）
+/// 被 Swift 层的 updateOrionErrorHandler 闭包调用
+__attribute__((noreturn)) void MM_GlobalErrorHandler(const char *message, const char *file, int line) {
+    RLog(@"🔥 Orion FATAL intercepted (Apps): %s (%s:%d)", message, file, line);
+    sigjmp_buf *buf = MM_GetJmpbuf();
+    siglongjmp(*buf, 1);
+    abort();
+}
+
 /// 安全执行 block，同时捕获 NSException 和 fatalError(SIGTRAP)
 BOOL MMSafeActivate(NSString * _Nullable context, void(^block)(void)) {
     struct sigaction old_trap, old_ill;
