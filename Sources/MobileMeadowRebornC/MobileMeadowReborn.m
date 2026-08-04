@@ -46,10 +46,65 @@ static void MMUncaughtExceptionHandler(NSException *exception) {
          exception.callStackSymbols);
 }
 
+// ============================================================
+// KVC 安全防护
+// Orion 生成的 glue 代码会通过 KVC (setValue:forKey:) 设置属性到系统类上，
+// 系统类没有这些属性就会抛出 NSUnknownKeyException 导致安全模式。
+// 解决方案：在 Orion 初始化之前，给所有 Hook 目标类添加
+// setValue:forUndefinedKey: 和 valueForUndefinedKey: 覆盖，
+// 让 KVC 遇到未知 key 时静默忽略而非崩溃。
+// ============================================================
+
+static void MMInstallKVCSafeHandler(Class cls) {
+    if (!cls) return;
+
+    // 覆盖 setValue:forUndefinedKey: — 静默忽略
+    SEL setSel = @selector(setValue:forUndefinedKey:);
+    IMP setImp = imp_implementationWithBlock(^(id self, id value, NSString *key) {
+        RLog(@"⚠️ KVC ignored: [%@ setValue:%@ forKey:%@]",
+             NSStringFromClass([self class]), value, key);
+    });
+    if (!class_addMethod(cls, setSel, setImp, "v@:@@")) {
+        class_replaceMethod(cls, setSel, setImp, "v@:@@");
+    }
+
+    // 覆盖 valueForUndefinedKey: — 返回 nil 而非崩溃
+    SEL getSel = @selector(valueForUndefinedKey:);
+    IMP getImp = imp_implementationWithBlock(^(id self, NSString *key) {
+        RLog(@"⚠️ KVC ignored: [%@ valueForKey:%@] -> nil", NSStringFromClass([self class]), key);
+        return nil;
+    });
+    if (!class_addMethod(cls, getSel, getImp, "@@:@")) {
+        class_replaceMethod(cls, getSel, getImp, "@@:@");
+    }
+}
+
+/// 给所有 Hook 目标类安装 KVC 安全处理器
+static void MMInstallAllKVCSafeHandlers(void) {
+    // SpringBoard 相关
+    MMInstallKVCSafeHandler(objc_getClass("SpringBoard"));
+    MMInstallKVCSafeHandler(objc_getClass("SBDockIconListView"));
+    MMInstallKVCSafeHandler(objc_getClass("SBDockView"));
+    MMInstallKVCSafeHandler(objc_getClass("MTMaterialView"));
+    MMInstallKVCSafeHandler(objc_getClass("SBIconListPageControl"));
+    MMInstallKVCSafeHandler(objc_getClass("SBRootFolderController"));
+    MMInstallKVCSafeHandler(objc_getClass("SBFolderController"));
+    MMInstallKVCSafeHandler(objc_getClass("SBNestingViewController"));
+    MMInstallKVCSafeHandler(objc_getClass("NCNotificationViewController"));
+    MMInstallKVCSafeHandler(objc_getClass("NCNotificationShortLookViewController"));
+
+    RLog(@"KVC safe handlers installed on all target classes");
+}
+
 __attribute__((constructor)) static void init() {
     // 注册未捕获异常处理器，作为最后防线
     NSSetUncaughtExceptionHandler(MMUncaughtExceptionHandler);
-    
+
+    // 在 Orion 初始化之前安装 KVC 安全处理器
+    // 这样 Orion 生成的 glue 代码调用 setValue:forKey: 时，
+    // 如果目标类没有对应属性，会静默忽略而非崩溃
+    MMInstallAllKVCSafeHandlers();
+
     RLog(@"MobileMeadowReborn dylib constructor — orion_init() about to be called");
     // Initialize Orion - do not remove this line.
     orion_init();

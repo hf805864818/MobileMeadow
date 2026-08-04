@@ -43,8 +43,38 @@ static void MMUncaughtExceptionHandler(NSException *exception) {
          exception.callStackSymbols);
 }
 
+// ============================================================
+// KVC 安全防护 — 同 MobileMeadowReborn.m 中的实现
+// ============================================================
+
+static void MMInstallKVCSafeHandler(Class cls) {
+    if (!cls) return;
+
+    SEL setSel = @selector(setValue:forUndefinedKey:);
+    IMP setImp = imp_implementationWithBlock(^(id self, id value, NSString *key) {
+        RLog(@"⚠️ KVC ignored (Apps): [%@ setValue:%@ forKey:%@]",
+             NSStringFromClass([self class]), value, key);
+    });
+    if (!class_addMethod(cls, setSel, setImp, "v@:@@")) {
+        class_replaceMethod(cls, setSel, setImp, "v@:@@");
+    }
+
+    SEL getSel = @selector(valueForUndefinedKey:);
+    IMP getImp = imp_implementationWithBlock(^(id self, NSString *key) {
+        RLog(@"⚠️ KVC ignored (Apps): [%@ valueForKey:%@] -> nil", NSStringFromClass([self class]), key);
+        return nil;
+    });
+    if (!class_addMethod(cls, getSel, getImp, "@@:@")) {
+        class_replaceMethod(cls, getSel, getImp, "@@:@");
+    }
+}
+
 __attribute__((constructor)) static void init() {
     NSSetUncaughtExceptionHandler(MMUncaughtExceptionHandler);
+
+    // 安装 KVC 安全处理器
+    MMInstallKVCSafeHandler(objc_getClass("_UIBarBackground"));
+
     RLog(@"MobileMeadowRebornApps dylib constructor — orion_init() about to be called");
     // Initialize Orion - do not remove this line.
     orion_init();
