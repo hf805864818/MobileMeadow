@@ -88,12 +88,16 @@ func setupBirdOverlayIfNeeded() {
 }
 
 //MARK: - Hook Groups
-struct SBPlants: HookGroup { let plantsEnabled: Bool }
-struct SBPlantsDock_iOS17: HookGroup { let plantsEnabled: Bool }
-struct SBPlantsVisual: HookGroup { let plantsEnabled: Bool }
-struct SBBirds: HookGroup { let birdsEnabled: Bool }
-struct SBMailBoxBird: HookGroup { let mailBoxBirdEnabled: Bool }
-struct SBMailBoxBirdNotification: HookGroup { let notificationHookEnabled: Bool }
+// 注意：HookGroup 不能包含任何属性！
+// Orion 的 _activate() 会通过 KVC (setValue:forKey:) 将属性设置到 Hook 目标对象上，
+// 系统类（如 SBDockView、MTMaterialView 等）没有这些属性，会抛出 NSUnknownKeyException 导致安全模式。
+// 所有配置通过全局变量 tweakPrefs 传递。
+struct SBPlants: HookGroup {}
+struct SBPlantsDock_iOS17: HookGroup {}
+struct SBPlantsVisual: HookGroup {}
+struct SBBirds: HookGroup {}
+struct SBMailBoxBird: HookGroup {}
+struct SBMailBoxBirdNotification: HookGroup {}
 
 //MARK: - Safe Activation Helper
 /// 安全激活 Hook 组，捕获 NSException 防止安全模式
@@ -127,16 +131,16 @@ struct MobileMeadowReborn: Tweak {
             if tweakPrefs.plantsEnabled {
                 // 视觉 Hook（MTMaterialView + SBIconListPageControl）
                 safeActivate("SBPlantsVisual") {
-                    SBPlantsVisual(plantsEnabled: true).activate()
+                    SBPlantsVisual().activate()
                 }
 
                 if classExists("SBDockIconListView") {
                     safeActivate("SBPlants (SBDockIconListView)") {
-                        SBPlants(plantsEnabled: true).activate()
+                        SBPlants().activate()
                     }
                 } else if classExists("SBDockView") {
                     safeActivate("SBPlantsDock_iOS17 (SBDockView)") {
-                        SBPlantsDock_iOS17(plantsEnabled: true).activate()
+                        SBPlantsDock_iOS17().activate()
                     }
                 } else {
                     remLog("⚠️ Neither SBDockIconListView nor SBDockView found — plants dock hook skipped")
@@ -144,19 +148,19 @@ struct MobileMeadowReborn: Tweak {
             }
             if tweakPrefs.birdsEnabled {
                 safeActivate("SBBirds") {
-                    SBBirds(birdsEnabled: true).activate()
+                    SBBirds().activate()
                 }
 
                 if tweakPrefs.mailBoxEnabled {
                     if classExists("SBRootFolderController") {
                         safeActivate("SBMailBoxBird") {
-                            SBMailBoxBird(mailBoxBirdEnabled: true).activate()
+                            SBMailBoxBird().activate()
                         }
                     }
 
                     if classExists("NCNotificationShortLookViewController") {
                         safeActivate("SBMailBoxBirdNotification") {
-                            SBMailBoxBirdNotification(notificationHookEnabled: true).activate()
+                            SBMailBoxBirdNotification().activate()
                         }
                     }
                 }

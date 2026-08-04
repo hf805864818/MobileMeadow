@@ -35,7 +35,16 @@ id _Nullable MMGetProperty(id object, NSString *key) {
     return objc_getAssociatedObject(object, (__bridge const void *)(key));
 }
 
+/// 未捕获异常处理器 — 记录异常信息
+static void MMUncaughtExceptionHandler(NSException *exception) {
+    RLog(@"💀 UNCAUGHT EXCEPTION (Apps): %@ — %@\nStack: %@",
+         exception.name,
+         exception.reason,
+         exception.callStackSymbols);
+}
+
 __attribute__((constructor)) static void init() {
+    NSSetUncaughtExceptionHandler(MMUncaughtExceptionHandler);
     RLog(@"MobileMeadowRebornApps dylib constructor — orion_init() about to be called");
     // Initialize Orion - do not remove this line.
     orion_init();
