@@ -46,4 +46,9 @@ void MMSetProperty(id object, NSString *key, id _Nullable value);
 /// 获取关联对象
 id _Nullable MMGetProperty(id object, NSString *key);
 
+/// 全局错误处理跳转函数（noreturn）
+/// 被 Swift 层的 updateOrionErrorHandler 闭包调用
+/// 在 orionError() 内部、fatalError() 之前拦截，用 siglongjmp 跳回安全点
+__attribute__((noreturn)) void MM_GlobalErrorHandler(const char *message, const char *file, int line);
+
 NS_ASSUME_NONNULL_END
