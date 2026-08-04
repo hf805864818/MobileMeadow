@@ -4,6 +4,8 @@
 #include <Foundation/Foundation.h>
 #include <stdarg.h>
 
+NS_ASSUME_NONNULL_BEGIN
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -17,7 +19,7 @@ void RLog(NSString *fmt, ...);
 /// 获取当前越狱的 jbroot 路径
 /// 兼容 rootless (/var/jb) 和 Roothide (/var/containers/Bundle/Application/.jbroot-XXXX)
 /// 返回 nil 表示未找到 jbroot（可能是 rootful 越狱）
-NSString *MMGetJbrootPath(void);
+NSString * _Nullable MMGetJbrootPath(void);
 
 /// 获取日志文件路径
 /// 优先使用 jbroot 下的路径，回退到 /var/mobile/Library/Logs/
@@ -34,5 +36,7 @@ NSString *MMGetPreferencesPath(void);
 #ifdef __cplusplus
 }
 #endif
+
+NS_ASSUME_NONNULL_END
 
 #endif /* RemoteLog_h */
