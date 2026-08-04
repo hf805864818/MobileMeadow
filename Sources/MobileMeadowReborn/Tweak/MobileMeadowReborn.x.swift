@@ -110,12 +110,14 @@ struct SBMailBoxBirdNotification: HookGroup {}
 /// 所以必须用 updateOrionErrorHandler 全局替换错误处理器。
 func safeActivate(_ name: String, _ block: @escaping () -> Void) {
     // 保存旧的全局错误处理器
-    var savedOldHandler: ((String, StaticString, UInt) -> Never)?
+    // OrionErrorHandler = (@autoclosure () -> String, StaticString, UInt) -> Never
+    var savedOldHandler: OrionErrorHandler?
     updateOrionErrorHandler { old in
         savedOldHandler = old
         return { message, file, line in
             // 在 Orion 调用 fatalError 之前拦截，用 siglongjmp 跳回安全点
-            MM_GlobalErrorHandler(message, file.description, Int32(line))
+            // message 是 @autoclosure () -> String，需要调用 message() 获取字符串
+            MM_GlobalErrorHandler(message(), file.description, Int32(line))
         }
     }
 
